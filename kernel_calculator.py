@@ -13,10 +13,10 @@ def mean_variance(distribution_x, distribution_P):
     # variance = (distribution_x**2 * P_N).sum() - mean**2 # method 2
     return mean, variance # two scalars
 
-# kernel = [0.125, 0.375, 0.375, 0.125] # this gives a factor of exactly 3.2 reduction from the variance of y to the variance of convolved distribution
+kernel = [0.125, 0.375, 0.375, 0.125] # this gives a factor of exactly 3.2 reduction from the variance of y to the variance of convolved distribution
 # kernel = [0.25, 0.25, 0.25, 0.25] # this gives a factor of exactly 3.2 reduction from the variance of y to the variance of convolved distribution
 # kernel = [0.00, 0.00, 0.50, 0.50] # this gives a factor of exactly 3.2 reduction from the variance of y to the variance of convolved distribution
-kernel = [0.00, 0.00, 0.60, 0.40] # this gives a factor of exactly 3.2 reduction from the variance of y to the variance of convolved distribution
+# kernel = [0.00, 0.00, 0.60, 0.40] # this gives a factor of exactly 3.2 reduction from the variance of y to the variance of convolved distribution
 if __name__=='__main__':
     # lambda: the free variable to change.
     N = np.arange(100) # range of all natural numbers. 1000 is close enough to infinity.
@@ -58,5 +58,10 @@ if __name__=='__main__':
     plt.show()
 """
 Conclusion:
-y_var started at 0.3783934365408028 at lamb=0.1, and asymptotically approaches around 0.25
+1. For the distribution y=sqrt(counts), y_var started at 0.3783934365408028 at lamb=0.1, and asymptotically approaches around 0.25
+2. averaging up samples from a few of these identical distributions (in an unweighted manner) will yield a smaller variance
+3. Weighted average of several of these identical distribution
+    for [a, b, c, d] where a+b+c+d == 1
+    new_variance = sum(a**2 + b**2 + c**2 + d**2) * old_variance
+4. an all-positive kernel is doing precisely this: a weighted average.
 """
