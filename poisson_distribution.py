@@ -1,14 +1,62 @@
-from numpy import array as ary; from numpy import log as ln
-from numpy import cos, sin, pi, sqrt, exp, arccos;
-tau = 2*pi
-import numpy as np;
-from matplotlib import pyplot as plt
-# from math import factorial
-# fac = lambda a: ary([factorial(i) for i in a])
-from scipy.special import factorial as fac
+import numpy as np
+from numpy import pi, sqrt, exp, array as ary, log as ln
+# # create a chainmul operator
+# from operator import mul
+# from functools import reduce
+# chainmul = lambda *args: reduce(mul, args)
+import scipy.stats
 
-PLOT = True
+class ProbabilityDistribution():
+    """
+    ABC for probability distribution.
+    """
+    @property
+    def mean(self):
+        return self._distribution.mean()
+
+    @property
+    def variance(self):
+        return self._distribution.var()
+
+    def get_samples(self, sample_size):
+        self._distribution.rvs(sample_size)
+
+    def likelihood(self, samples):
+        """
+        Parameters
+        ----------
+        samples: the list of samples that we want the likelihood values of.
+        This gives the likelihood of these samples coming from this distribution
+        """
+        return self._distribution.pmf(samples)
+
+    def negative_log_likelihood(self, samples):
+        lamb = self.mean
+
+
+class Poisson(ProbabilityDistribution):
+    """
+    Wrapper around the scipy poisson
+    """
+    def __init__(self, lamb):
+        self._distribution = scipy.stats.poisson(lamb)
+
+class Normal(ProbabilityDistribution):
+    def __init__(self, mean, variance):
+        self._distribution = scipy.stats.norm(mean, sqrt(variance))
+
+    def likelihood(self, sample):
+        """
+        Parameters
+        """
+
 if __name__=='__main__':
+    PLOT = True
+    from matplotlib import pyplot as plt
+    # from math import factorial
+    # fac = lambda a: ary([factorial(i) for i in a])
+    from scipy.special import factorial as fac
+
     # lambda: the free variable to change.
     N = np.arange(1000) # range of all natural numbers. 1000 is close enough to infinity.
     y = sqrt(N) # sqrt(counts) representation
