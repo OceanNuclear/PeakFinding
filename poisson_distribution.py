@@ -1,5 +1,7 @@
 import numpy as np
 from numpy import pi, sqrt, exp, array as ary, log as ln
+from math import fsum
+tau = 2*pi
 # # create a chainmul operator
 # from operator import mul
 # from functools import reduce
@@ -8,7 +10,8 @@ import scipy.stats
 
 class ProbabilityDistribution():
     """
-    ABC for probability distribution.
+    ABC for probability distributions that relies heavily on scipy.stats
+    Classes that implement this must have a "_distribution" attribute, created from one of the scipy.stats distributions
     """
     @property
     def mean(self):
@@ -18,8 +21,25 @@ class ProbabilityDistribution():
     def variance(self):
         return self._distribution.var()
 
+class ProbabilityDistributionLikelihood(ProbabilityDistribution):
+    """
+    ABC for probability distribution that can use likelihood function
+    """
+
     def get_samples(self, sample_size):
         self._distribution.rvs(sample_size)
+
+    def naive_NLL(self, samples):
+        likelihood = self.likelihood(samples)
+        return -ln(sqrt(tau * self._lambda) * likelihood)
+
+class Poisson(ProbabilityDistributionLikelihood):
+    """
+    Wrapper around the scipy poisson
+    """
+    def __init__(self, lamb):
+        self._distribution = scipy.stats.poisson(lamb)
+        self._lambda = lamb
 
     def likelihood(self, samples):
         """
@@ -31,24 +51,81 @@ class ProbabilityDistribution():
         return self._distribution.pmf(samples)
 
     def negative_log_likelihood(self, samples):
-        lamb = self.mean
+        """
+        Direct formula that calculates the negative log likelihood
+        The samples provided must be integers
+        """
+        if self._lambda==0:
+            return np.zeros(np.shape(samples))
+        NLL_list = []
+        const_offset = -0.5 * ln(tau) + self._lambda -0.5*ln(self._lambda)
+        for N in samples:
+            factorial_part = ln(np.arange(1, N+1))
+            power_part = -ln(self._lambda)
+            overflow_likely_part = factorial_part + power_part
 
+            # perform a "folding" operation on the array, where the first element is added to the last, second to the second-last, etc.
+            # this should yield an array of half the length if even N, half-length +1 if odd N..
+            N_2 = N//2 #floor div of an integer should be an int
+            first_part, second_part = overflow_likely_part[:N_2], overflow_likely_part[-N_2:]
+            overflowy_part_folded_in_half = first_part + second_part[::-1]
+            if (N%2)==1:
+                overflowy_part_folded_in_half = np.append(overflowy_part_folded_in_half, overflow_likely_part[N_2]) # append in the exact half-way point.
 
-class Poisson(ProbabilityDistribution):
-    """
-    Wrapper around the scipy poisson
-    """
-    def __init__(self, lamb):
-        self._distribution = scipy.stats.poisson(lamb)
+            nll = const_offset + fsum(overflowy_part_folded_in_half) # the last two terms will partially cancel out each other to reduce the level of stress.
 
-class Normal(ProbabilityDistribution):
+            NLL_list.append(nll)
+        return ary(NLL_list)
+
+    def less_naive_negative_log_likelihood(self, samples):
+        if self._lambda==0:
+            return 0.0
+        return self.naive_NLL(samples) - 0.5*ln(tau * self._lambda)
+
+class Normal(ProbabilityDistributionLikelihood):
     def __init__(self, mean, variance):
-        self._distribution = scipy.stats.norm(mean, sqrt(variance))
-
-    def likelihood(self, sample):
         """
         Parameters
+        ----------
+        mean: mean of the normal distribution (the centroid)
+        variance: sigma**2 of the normal distribution (standard deviation)
         """
+        self._distribution = scipy.stats.norm(mean, sqrt(variance)) # norm has signature (mean, sigma)
+        # therefore we need to do sqrt(variance) to get sigma
+
+    def likelihood(self, samples):
+        """
+        Parameters
+        ----------
+        samples: the list of samples that we want the likelihood values of.
+        """
+        self._distribution.pdf(samples)
+
+    def negative_log_likelihood(self, samples):
+        """
+        direct formula that calculates the negative log-likelihood of a normal distribution:
+        chi^2 = sum_i(
+                    (x[i] - distribution.mean)**2
+                    _____________
+                    variance
+                    )
+        """
+        return 0.5*np.nan_to_num((samples-self.mean)**2/self.variance, nan=0.0)
+
+class Chi2(ProbabilityDistribution):
+    def __init__(self, DoF):
+        """
+        Usually, a function is fitted, generating a goodness-of-fit parameter known as chi2.
+        The chi2 itself is also a statisical variable
+
+        Parameters
+        ----------
+        DoF: degree of freedom used when fitting hte 
+        """
+        self._distribution = scipy.stats.chi2(DoF)
+
+    def cdf(self, samples):
+        return self._distribution.cdf(samples)
 
 if __name__=='__main__':
     PLOT = True
