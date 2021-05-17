@@ -45,7 +45,11 @@ if __name__=='__main__':
 
     # upper plot
     plot_sqrt(counts, ax=ax_u)
-    ax_u.set_xticklabels([str(mid_E[int(x)]) for x in ax_u.get_xticks()])
+    old_ticks = ax_u.get_xticks()
+    new_ticks = []
+    for x in old_ticks:
+        new_ticks.append(str(mid_E[np.clip(int(x), 0, len(mid_E)-1)]))
+    ax_u.set_xticklabels(new_ticks)
     ax_u.set_xlabel(r"$E_\gamma$ (eV)")
 
     # middle plot
