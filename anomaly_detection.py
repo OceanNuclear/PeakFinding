@@ -105,7 +105,7 @@ if __name__=='__main__':
     import seaborn as sns
     from math import floor
     # from collections import defaultdict
-    REPLOT_TICKS = False
+    REPLOT_XTICKS = False
     
     WINDOW_WIDTHS = range(4, 40)
     spectrum = pd.read_csv(sys.argv[1], index_col=[0]).values.T
@@ -121,7 +121,7 @@ if __name__=='__main__':
         GoF = SpectrumGoodnessOfFit(counts, w)
         GoF.get_self_contributed_peakiness()
 
-        results_canonical.append(np.insert([np.nan,]*w, floor(w/2), GoF.get_canonical_peakiness()))
+        results_canonical.append(np.insert([np.nan,]*(w-1), floor(w/2), GoF.get_canonical_peakiness()))
         results_self_cont.append(GoF.get_self_contributed_peakiness())
 
     # fig, ((ax_u, _), (ax_l, cbar_ax)) = plt.subplots(2, 2, sharex=True, gridspec_kw={"width_ratios": (.9, .05), "wspace": .3})
@@ -129,7 +129,8 @@ if __name__=='__main__':
 
     # upper plot
     plot_sqrt(counts, ax=ax_u)
-    if REPLOT_TICKS:
+    ax.set_xlabel("")
+    if REPLOT_XTICKS:
         old_ticks = ax_u.get_xticks()
         # fix the tick problem (as we can't plot the with the ticks)
         new_ticks = []
@@ -147,4 +148,12 @@ if __name__=='__main__':
     ax_l.set_title("Likelihood of being a peak\nby the canonical method")
     ax_l.set_ylabel("Size of hypothesis window")
 
+    ax_l.set_xlabel(r"$E_\gamma$ (keV)")
+    plt.show()
+
+    # peakiness = np.nanmean(results_canonical, axis=0)
+    ax_l.plot(np.nanmean(results_canonical, axis=0), label="canonical mean")
+    ax_l.plot(np.nanmean(results_self_cont, axis=0), label="self-contribution mean")
+    ax_l.set_xlabel(r"$E_\gamma$ (keV)")
+    ax_l.set_ylabel("Peakiness")
     plt.show()

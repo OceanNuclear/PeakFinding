@@ -59,7 +59,6 @@ def plot_log(*args, ax=None):
         boundary_2d = ary([np.arange(0, len(counts)), np.arange(1,len(counts)+1)]).T
         ax.set_xlabel("bins")
     plot, = ax.semilogy(boundary_2d.flatten(), np.repeat(counts, 2))
-    ax.set_xlabel("gamma E (keV)")
     ax.set_ylabel("counts")
     ax.set_title("log plot of gamma spec")
     return ax, plot
