@@ -129,7 +129,7 @@ if __name__=='__main__':
 
     # upper plot
     plot_sqrt(counts, ax=ax_u)
-    ax.set_xlabel("")
+    ax_u.set_xlabel("")
     if REPLOT_XTICKS:
         old_ticks = ax_u.get_xticks()
         # fix the tick problem (as we can't plot the with the ticks)
