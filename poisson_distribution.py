@@ -127,6 +127,9 @@ class Chi2(ProbabilityDistribution):
     def cdf(self, samples):
         return self._distribution.cdf(samples)
 
+    def pdf(self, samples):
+        return self._distribution.pdf(samples)        
+
 if __name__=='__main__':
     PLOT = True
     from matplotlib import pyplot as plt
