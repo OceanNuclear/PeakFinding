@@ -30,16 +30,10 @@ class SpectrumGoodnessOfFit():
         
         poisson_goodness_of_fit_full_stack = []
 
-        zip_object = []
-        for i in range(window_width):
-            end_index = -(window_width-1)+i
-            if end_index==0:
-                end_index = None
-            zip_object.append(counts[i:end_index])
-        spread_stack = ary(list(zip(*zip_object)))
-        mean_stack = spread_stack.mean(axis=1)
+        spread_stack = ary([ counts[i:len(counts)-window_width+1+i] for i in range(window_width)])
+        mean_stack = spread_stack.mean(axis=0)
 
-        for num_window, (samples, sample_mean) in tqdm(enumerate(zip(spread_stack, mean_stack)),
+        for num_window, (samples, sample_mean) in tqdm(enumerate(zip(spread_stack.T, mean_stack)),
                                                     total=len(counts)-window_width+1):
             poisson_hypothesized = Poisson(sample_mean)
             # calculate the contribution to the poisson chi2 equivalent quantity.
@@ -118,12 +112,12 @@ if __name__=='__main__':
 
     mid_E = E_bound.mean(axis=1)
 
-    results_canonical, results_self_cont, GoF_collection = [], [], []
+    results_canonical, results_self_cont, GoF_collection = [], [], {}
     for w in WINDOW_WIDTHS:
         print(f"Checking for peak-iness using window size = {w}")
         GoF = SpectrumGoodnessOfFit(counts, w)
 
-        GoF_collection.append(GoF)
+        GoF_collection[w] = GoF
         results_canonical.append(np.insert([np.nan,]*(w-1), floor(w/2), GoF.get_canonical_peakiness()))
         results_self_cont.append(GoF.get_self_contributed_peakiness())
 

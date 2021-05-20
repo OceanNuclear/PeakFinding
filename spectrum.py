@@ -7,6 +7,8 @@ import re
 import sys
 import datetime as dt
 import warnings
+import functools
+from operator import add as add
 
 class Histogram():
     """
@@ -149,6 +151,11 @@ class RealSpectrum(Histogram):
             
         return cls(counts, boundaries, bound_units, wall_time, **init_dict)
 
+    @classmethod
+    def from_Spes(cls, *filenames):
+        return functools.reduce(add, [cls.from_Spe(fname) for fname in filenames])
+
+
 def regex_num(line, dtype=int):
     return [dtype(i) for i in re.findall(r"[\w]+", line)]
 
@@ -160,11 +167,6 @@ def _to_datetime(line):
     return dt.datetime(year, month, day, hour, minute, second)
 
 if __name__=='__main__':
-    import functools
-    from operator import add as add
-    from pprint import pprint
-
-    spectra = [RealSpectrum.from_Spe(arg) for arg in sys.argv[1:]]
-    final_spec = functools.reduce(add, spectra)
-    final_spec.plot_sqrt_scale()
+    spectrum = RealSpectrum.from_Spes(*sys.argv[1:])
+    spectrum.plot_sqrt_scale()
     plt.show()

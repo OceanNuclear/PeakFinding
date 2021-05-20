@@ -54,25 +54,37 @@ class Poisson(ProbabilityDistributionLikelihood):
         """
         Direct formula that calculates the negative log likelihood
         The samples provided must be integers
+
+        Parameters
+        ----------
+        samples: array of int! Otherwise it will throw erros
+
+        Returns
+        -------
+        NLL_list: array of the same shape
         """
         if self._lambda==0:
             return np.zeros(np.shape(samples))
         NLL_list = []
         const_offset = -0.5 * ln(tau) + self._lambda -0.5*ln(self._lambda)
         for N in samples:
-            factorial_part = ln(np.arange(1, N+1))
-            power_part = -ln(self._lambda)
-            overflow_likely_part = factorial_part + power_part
+            if np.isnan(N): # nan handling
+                nll = np.nan
+            else:
+                factorial_part = ln(np.arange(1, N+1))
+                power_part = -ln(self._lambda)
+                overflow_likely_part = factorial_part + power_part
 
-            # perform a "folding" operation on the array, where the first element is added to the last, second to the second-last, etc.
-            # this should yield an array of half the length if even N, half-length +1 if odd N..
-            N_2 = N//2 #floor div of an integer should be an int
-            first_part, second_part = overflow_likely_part[:N_2], overflow_likely_part[-N_2:]
-            overflowy_part_folded_in_half = first_part + second_part[::-1]
-            if (N%2)==1:
-                overflowy_part_folded_in_half = np.append(overflowy_part_folded_in_half, overflow_likely_part[N_2]) # append in the exact half-way point.
+                # perform a "folding" operation on the array, where the first element is added to the last, second to the second-last, etc.
+                # this should yield an array of half the length if even N, half-length +1 if odd N..
+                N_2 = int(N//2) #floor div of an integer should be an int
+                first_part, second_part = overflow_likely_part[:N_2], overflow_likely_part[-N_2:]
+                # ******* ^ IF THIS LINE FAILS THAT MEANS YOU FAILED TO PASS IN INT AS SAMPLES. YOU MAY HAVE USED FLOATS
+                overflowy_part_folded_in_half = first_part + second_part[::-1]
+                if (N%2)==1:
+                    overflowy_part_folded_in_half = np.append(overflowy_part_folded_in_half, overflow_likely_part[N_2]) # append in the exact half-way point.
 
-            nll = const_offset + fsum(overflowy_part_folded_in_half) # the last two terms will partially cancel out each other. so they must be added together first.
+                nll = const_offset + fsum(overflowy_part_folded_in_half) # the last two terms will partially cancel out each other. so they must be added together first.
 
             NLL_list.append(nll)
         return ary(NLL_list)
