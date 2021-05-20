@@ -72,7 +72,7 @@ class Poisson(ProbabilityDistributionLikelihood):
             if (N%2)==1:
                 overflowy_part_folded_in_half = np.append(overflowy_part_folded_in_half, overflow_likely_part[N_2]) # append in the exact half-way point.
 
-            nll = const_offset + fsum(overflowy_part_folded_in_half) # the last two terms will partially cancel out each other to reduce the level of stress.
+            nll = const_offset + fsum(overflowy_part_folded_in_half) # the last two terms will partially cancel out each other. so they must be added together first.
 
             NLL_list.append(nll)
         return ary(NLL_list)

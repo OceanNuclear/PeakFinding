@@ -60,7 +60,7 @@ class SpectrumGoodnessOfFit():
         goodness_of_fit_sum = self._goodness_of_fit_values.sum(axis=0)
         return self.chi2_cdf_converter.cdf(goodness_of_fit_sum)
 
-    def get_self_contributed_peakiness(self):
+    def get_self_contributed_goodness_of_fit(self):
         """
         Experimental/beta way of calculating the probability of this being a peak itself. This seems to exaggerate the number quite a lot and allows for a
 
@@ -97,9 +97,12 @@ class SpectrumGoodnessOfFit():
         """
         nan_rectangle = np.full((self.window_width, self.window_width-1), np.nan) # shape = (window_width, window_width-1)
         full_sized_goodness_of_fit = ary([np.insert(nans, ind, GoF_line) for ind, (nans, GoF_line) in enumerate(zip(nan_rectangle, self._goodness_of_fit_values))])
+        return full_sized_goodness_of_fit
 
+    def get_self_contributed_peakiness(self):
+        full_sized_goodness_of_fit = self.get_self_contributed_goodness_of_fit()
         goodness_of_fit_sum = np.nanmean(full_sized_goodness_of_fit, axis=0) * self.window_width
-        return self.chi2_cdf_converter.cdf((goodness_of_fit_sum))
+        return self.chi2_cdf_converter.cdf(goodness_of_fit_sum)
 
 if __name__=='__main__':
     import seaborn as sns
@@ -115,16 +118,15 @@ if __name__=='__main__':
 
     mid_E = E_bound.mean(axis=1)
 
-    results_canonical, results_self_cont = [], []
+    results_canonical, results_self_cont, GoF_collection = [], [], []
     for w in WINDOW_WIDTHS:
         print(f"Checking for peak-iness using window size = {w}")
         GoF = SpectrumGoodnessOfFit(counts, w)
-        GoF.get_self_contributed_peakiness()
 
+        GoF_collection.append(GoF)
         results_canonical.append(np.insert([np.nan,]*(w-1), floor(w/2), GoF.get_canonical_peakiness()))
         results_self_cont.append(GoF.get_self_contributed_peakiness())
 
-    # fig, ((ax_u, _), (ax_l, cbar_ax)) = plt.subplots(2, 2, sharex=True, gridspec_kw={"width_ratios": (.9, .05), "wspace": .3})
     fig, (ax_u, ax_m, ax_l) = plt.subplots(3, 1, sharex=True)
 
     # upper plot
@@ -152,8 +154,9 @@ if __name__=='__main__':
     plt.show()
 
     # peakiness = np.nanmean(results_canonical, axis=0)
-    ax_l.plot(np.nanmean(results_canonical, axis=0), label="canonical mean")
-    ax_l.plot(np.nanmean(results_self_cont, axis=0), label="self-contribution mean")
+    fig, (ax_u, ax_l) = plt.subplots(2, 1, sharex=True)
+    plot_sqrt(E_bound, counts, ax=ax_u)
+    ax_l.plot(E_bound.flatten(), np.repeat(np.nanmean(results_canonical, axis=0), 2), label="canonical mean")
     ax_l.set_xlabel(r"$E_\gamma$ (keV)")
-    ax_l.set_ylabel("Peakiness")
+    ax_l.set_ylabel("Probabilty of being NOT noise")
     plt.show()
