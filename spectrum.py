@@ -155,18 +155,156 @@ class RealSpectrum(Histogram):
     def from_Spes(cls, *filenames):
         return functools.reduce(add, [cls.from_Spe(fname) for fname in filenames])
 
-class RealSpectrumTunable(RealSpectrum):
+class RealSpectrumInteractive(RealSpectrum):
     def __init__(self, counts, boundaries, bound_units, wall_time, **init_dict):
         super().__init__(counts, boundaries, bound_units, wall_time, **init_dict)
-        assert self.bound_units=="keV"
+        self._clicked_and_dragged = []
 
-    def plot_log_scale(self, ax=None, **kwargs):
+    def show_log_scale(self, ax=None, **kwargs):
+        """
+        Identical documentation as show_sqrt_scale
+        """
         ax, line = super().plot_log_scale(ax, **kwargs)
-        fig = ax.figure
-        fig.canvas.mpl_connect("button_press_event", self.on_click)
-        return ax, line
+        self._setup_fig(ax.figure)
+        plt.show()
+        self._teardown_fig()
+        return
 
-    def _on_click(self, ):
+    def show_sqrt_scale(self, ax=None, **kwargs):
+        """
+        Connect button clicks on the plot to other useful stuff.
+        Parameters
+        ----------
+        same as RealSpectrum.plot_sqrt_scale
+
+        Returns
+        -------
+        nothing, as this method only returns when we close the plot.
+        """
+
+        ax, line = super().plot_sqrt_scale(ax, False, **kwargs)
+        self.fig = ax.figure
+        self._setup_fig(ax.figure)
+        ax.set_ylabel("counts")
+        yticks = ax.get_yticks()
+        yticks = round_to_nearest_sq_int(yticks)
+        ax.set_yticklabels(["{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2])
+        plt.show()
+        self._teardown_fig()
+        return
+
+    def _on_press(self, event):
+        """
+        gets the information about a button press down event.
+        Other usable attributes about the events are:
+        'button', 'canvas', 'dblclick', 'guiEvent', 'inaxes', 'key', 'lastevent', 'name', 'step'
+        """
+        canvas = event.canvas
+        if canvas.manager.toolbar._active is None:
+            print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
+            if event.inaxes:
+                self._clicked_and_dragged.append([event.xdata, event.ydata])
+        elif canvas.manager.toolbar._active in ("PAN", "ZOOM"):
+            self._event_ax = event.inaxes
+        return event
+
+    def _on_release(self, event):
+        ax = event.inaxes
+        canvas = event.canvas
+        if canvas.manager.toolbar._active is None:
+            print("released at x={}, y={}".format(event.xdata, event.ydata))
+            if (len(self._clicked_and_dragged)%2)==1: # odd number of entries in the _clicked_and_dragged list
+                self._clicked_and_dragged.append([event.xdata, event.ydata])
+            print()
+        elif canvas.manager.toolbar._active in ("PAN", "ZOOM"):
+            # if False:
+            #     yticks = ax.get_yticks()
+            #     ax.set_yticklabels(["{:.1f}".format(i) for i in np.sign(yticks)*(yticks)**2])
+            # else:
+            ylim = self._event_ax.get_ylim()
+            yticks = np.linspace(*ylim, 10)
+            yticks = round_to_nearest_sq_int(yticks)
+            self._event_ax.set_yticks(yticks)
+            self._event_ax.set_yticklabels(["{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2])
+            delattr(self, "_event_ax")
+        return event
+
+    def _setup_fig(self, fig):
+        self.fig = fig
+        self.on_press_connection = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
+        self.on_release_connection = self.fig.canvas.mpl_connect("button_release_event", self._on_release)
+
+    def _teardown_fig(self):
+        self.fig.canvas.mpl_disconnect(self.on_press_connection)
+        self.fig.canvas.mpl_disconnect(self.on_release_connection)
+        delattr(self, "fig")
+        delattr(self, "on_press_connection")
+        delattr(self, "on_release_connection")
+
+    def __del__(self):
+        if hasattr(self, "fig"):
+            try:
+                self._teardown_fig()
+            except:
+                pass
+
+    def add_resolution_coefficients(self, peak_min1, peak_max1, *peak2_minmax):
+        """
+        Given min-max energies of ONE or TWO peaks, generate the resolution curve's coefficients
+        Resolution curve equation:
+        FWHM  √(A + B*E)
+        ----= ----------
+          E        E
+        So to express the FWHM, we can use
+
+        Paramters (all are float scalars)
+        ---------
+        peak_min1: left side of the first peak
+        peak_min2: left side of the second peak
+        peak_min
+
+        Returns
+        -------
+        """
+        E1 = (peak_min1 + peak_max1)/2
+        w1 = peak_max1 - peak_min1
+        if len(peak2_minmax)==2:
+            peak_min2, peak_max2 = peak2_minmax
+            E2 = (peak_min2 + peak_max2)/2
+            w2 = peak_max2 - peak_min2
+            # solve by FWHM **2 = A + B*E:
+            resolution_coeffs = (np.linalg.inv([[1, E1], [1, E2]]) @ ary([w1**2, w2**2]))
+        else:
+            resolution_coeff_2 = w1**2/E1
+            resolution_coeffs = ary([0, resolution_coeff_2])
+        self.resolution_coefficients = resolution_coeffs
+        return self.resolution_coefficients
+
+    def add_resolution_coefficients_interactively(self, plot_scale="sqrt"):
+        """
+        Plot the spectrum on a matplotlib figure, on which the user can click and drag to define one or two peaks.
+        If >2 clicks were detected, then only the last two will made.
+
+        Paramters
+        ---------
+        scale: scale to show the spectrum plot in. Options are: "sqrt" (default), "log".
+        """
+        print("Click and drag across the peak(s) (left to right) that you'd like to fit;")
+        print("Only the last two click-and-dragged peaks will be used as the data.")
+        self._clicked_and_dragged = [] # clear the list
+        getattr(self, "show_{}_scale".format(plot_scale))()
+        self.add_resolution_coefficients( *ary(self._clicked_and_dragged)[-4:, 0] )
+
+    def get_width_at(self, peak_E):
+        assert hasattr(self, "resolution_coefficients"), "Must run one of the add_resolution_coefficients* method first."
+
+def round_to_nearest_sq_int(yticks):
+    rounded_values = np.round(yticks).astype(int)
+
+    sq_values = np.sign(yticks)*(yticks)**2
+    sq_rounded_values = np.round(sq_values)
+    sq_rounded_values_no_repeat = ary(sorted(set(sq_rounded_values)))
+    return np.sign(sq_rounded_values_no_repeat) * sqrt(abs(sq_rounded_values_no_repeat))
 
 def regex_num(line, dtype=int):
     return [dtype(i) for i in re.findall(r"[\w]+", line)]
@@ -179,9 +317,5 @@ def _to_datetime(line):
     return dt.datetime(year, month, day, hour, minute, second)
 
 if __name__=='__main__':
-    spectrum = RealSpectrum.from_Spes(*sys.argv[1:])
-    ax, line = spectrum.plot_sqrt_scale()
-    fig = ax.figure
-    connection = fig.canvas.mpl_connect("button_press_event", on_click)
-    plt.show()
-    fig.canvas.mpl_disconnect(connection)
+    spectrum = RealSpectrumInteractive.from_Spes(*sys.argv[1:])
+    spectrum.show_sqrt_scale()
