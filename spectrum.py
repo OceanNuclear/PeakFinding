@@ -127,11 +127,11 @@ class RealSpectrum(Histogram):
             elif block_identifier=="ENER_FIT": # energy fit (which is specific to maestro software, non-standard last I checked)
                 init_dict["energy_fit"] = [float(i) for i in lines[1].split()]
 
+            elif block_identifier in ("DATE_END_MEA", "DATE_MEA"):
+                init_dict[block_identifier.lower()] = _to_datetime(lines[1])
+
             else: # all other types of blocks
-                if block_identifier in ("DATE_END_MEA", "DATE_MEA"):
-                    init_dict[block_identifier.lower()] = _to_datetime(lines[1])
-                else:
-                    init_dict[block_identifier.lower()] = "\n".join(lines[1:])
+                init_dict[block_identifier.lower()] = "\n".join(lines[1:])
                 # raise KeyError("Invalid BLOCK identifier found: {}".format(block_identifier))
 
         bin_boundaries = ary([np.arange(max_chan+1), np.arange(1, max_chan+2)]).T
@@ -154,6 +154,56 @@ class RealSpectrum(Histogram):
     @classmethod
     def from_Spes(cls, *filenames):
         return functools.reduce(add, [cls.from_Spe(fname) for fname in filenames])
+
+    def to_Spe(self, file_path):
+        # identify what blocks are writable (all cases that aren't special cases will be handled differently)
+        self_dict = self.__dict__
+        with open(filenames, "w") as f:
+            # the first thing is to write measurement time
+            if "live_time" in self.__dict__ and "wall_time" in self.__dict__:
+                f.write("$MEAS_TIM:\n{} {}\n".format(self.wall_time, self.live_time))
+
+            for k, v in self.__dict__.items():
+                if k in "live_time", "wall_time", "boundaries", "bound_units":
+                    continue # take care of these later
+                f.write("${}:\n".format(k.upper()))
+
+                elif k.upper().endswith("CAL"):
+                    f.write(_format_key(k))
+                    f.write(_format_CAL(v)+"\n")
+
+                elif k.upper() == "counts":
+                    f.write(_format_key(k))
+                    f.write("{} {}".format(0, len()-1))
+                    f.write("\n".join([str(i).ljust() for i in v]))
+                    f.write("\n")
+
+                elif k.upper() in ("DATE_END_MEA", "DATE_MEA"):
+                    f.write(_format_key(k))
+                    f.write(dt.datetime.strptime(k, "%M/%D/%Y %h:%m:%s\n"))
+
+                elif k == "energy_fit":
+                    f.write("$ENER_FIT\n")
+                    f.write(_format_CAL(v)[2:])
+
+                else:
+                    f.write(_format_key(k))
+                    f.write(v+"\n")
+
+        raise NotImplementedError("Too busy; will write this later")
+
+    def to_csv(self, file_path):
+        import pandas as pd
+        df = pd.DataFrame(ary([self.counts, *self.boundaries.T]).T, columns=["lenergy", "uenergy", "count"])
+        df.to_csv(file_path, index_label="channel")
+        return
+
+def _format_key(key):
+    return "${}:\n".format(key)
+
+def _format_CAL(coefficients):
+    formatter_str = "{}\n{}"
+    return formatter_str.format(len(coefficients), " ".join([str(i) for i in coefficients]))
 
 class RealSpectrumInteractive(RealSpectrum):
     def __init__(self, counts, boundaries, bound_units, wall_time, **init_dict):
@@ -252,31 +302,35 @@ class RealSpectrumInteractive(RealSpectrum):
         """
         Given min-max energies of ONE or TWO peaks, generate the resolution curve's coefficients
         Resolution curve equation:
-        FWHM  √(A + B*E)
-        ----= ----------
-          E        E
+             FWHM  √(A + B*E)
+        R(E)=----= ----------
+              E        E
         So to express the FWHM, we can use
 
         Paramters (all are float scalars)
         ---------
         peak_min1: left side of the first peak
-        peak_min2: left side of the second peak
-        peak_min
+        peak_min2: right side of the first peak
+        peak2_minmax: if provided, the left and right sides of the second peak.
 
         Returns
         -------
+
         """
-        E1 = (peak_min1 + peak_max1)/2
-        w1 = peak_max1 - peak_min1
+        E1 = (peak_min1 + peak_max1)/2 # centroid energy for peak 1
+        w1 = peak_max1 - peak_min1 # width of peak 1
         if len(peak2_minmax)==2:
             peak_min2, peak_max2 = peak2_minmax
-            E2 = (peak_min2 + peak_max2)/2
-            w2 = peak_max2 - peak_min2
+            E2 = (peak_min2 + peak_max2)/2 # centroid 2
+            w2 = peak_max2 - peak_min2 # width 2
             # solve by FWHM **2 = A + B*E:
             resolution_coeffs = (np.linalg.inv([[1, E1], [1, E2]]) @ ary([w1**2, w2**2]))
+            # matrix inversion to find solution to  simultaneous equation
         else:
+            # assume A = 0,
             resolution_coeff_2 = w1**2/E1
-            resolution_coeffs = ary([0, resolution_coeff_2])
+            # B = FWHM^2/B
+            resolution_coeffs = ary([0, resolution_coeff_2]) # A is assumed zero by default
         self.resolution_coefficients = resolution_coeffs
         return self.resolution_coefficients
 
