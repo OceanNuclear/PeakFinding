@@ -33,13 +33,13 @@ def plot_sqrt(*args, ax=None, rewrite_yticks=False):
         boundary_2d = ary([np.arange(0, len(counts)), np.arange(1,len(counts)+1)]).T
         ax.set_xlabel("bins")
     transformed_cnts = sqrt(counts)
-    plot, = ax.plot(boundary_2d.flatten(), np.repeat(transformed_cnts, 2))
+    line, = ax.plot(boundary_2d.flatten(), np.repeat(transformed_cnts, 2))
     ax.set_ylabel("sqrt (counts)")
     if rewrite_yticks:
         ax.set_ylabel("counts")
         ax.set_yticklabels(np.sign(old_yticks:=ax.get_yticks()) * old_yticks**2)
     ax.set_title("sqrt-y plot of gamma spec")
-    return ax, plot
+    return ax, line
 
 def plot_log(*args, ax=None):
     """
@@ -58,10 +58,10 @@ def plot_log(*args, ax=None):
         counts = args[0]
         boundary_2d = ary([np.arange(0, len(counts)), np.arange(1,len(counts)+1)]).T
         ax.set_xlabel("bins")
-    plot, = ax.semilogy(boundary_2d.flatten(), np.repeat(counts, 2))
+    line, = ax.semilogy(boundary_2d.flatten(), np.repeat(counts, 2))
     ax.set_ylabel("counts")
     ax.set_title("log plot of gamma spec")
-    return ax, plot
+    return ax, line
 
 if __name__=='__main__':
     spectrum = pd.read_csv(sys.argv[1], index_col=[0])

@@ -27,16 +27,16 @@ class Histogram():
     def plot_log_scale(self, ax=None, **kwargs):
         if not ax:
             ax = plt.subplot()
-        plot, = ax.semilogy(self.boundaries.flatten(), np.repeat(self.counts, 2), **kwargs)
+        line, = ax.semilogy(self.boundaries.flatten(), np.repeat(self.counts, 2), **kwargs)
         ax.set_xlabel(self.bound_units)
         ax.set_ylabel("counts")
-        return ax, plot
+        return ax, line
         
     def plot_sqrt_scale(self, ax=None, rewrite_yticks=False, **kwargs):
         if not ax:
             ax = plt.subplot()
         transformed_cnts = sqrt(self.counts)
-        plot, = ax.plot(self.boundaries.flatten(), np.repeat(transformed_cnts, 2), **kwargs)
+        line, = ax.plot(self.boundaries.flatten(), np.repeat(transformed_cnts, 2), **kwargs)
         ax.set_xlabel(self.bound_units)
         # y labelling
         if rewrite_yticks:
@@ -44,7 +44,7 @@ class Histogram():
             ax.set_yticklabels(np.sign(yticks:=ax.get_yticks()) * yticks**2)
         else:
             ax.set_ylabel("sqrt(counts)")
-        return ax, plot
+        return ax, line
 
 class TimeSeries(Histogram):
     def __add__(self, ts2):
@@ -155,6 +155,18 @@ class RealSpectrum(Histogram):
     def from_Spes(cls, *filenames):
         return functools.reduce(add, [cls.from_Spe(fname) for fname in filenames])
 
+class RealSpectrumTunable(RealSpectrum):
+    def __init__(self, counts, boundaries, bound_units, wall_time, **init_dict):
+        super().__init__(counts, boundaries, bound_units, wall_time, **init_dict)
+        assert self.bound_units=="keV"
+
+    def plot_log_scale(self, ax=None, **kwargs):
+        ax, line = super().plot_log_scale(ax, **kwargs)
+        fig = ax.figure
+        fig.canvas.mpl_connect("button_press_event", self.on_click)
+        return ax, line
+
+    def _on_click(self, ):
 
 def regex_num(line, dtype=int):
     return [dtype(i) for i in re.findall(r"[\w]+", line)]
@@ -168,5 +180,8 @@ def _to_datetime(line):
 
 if __name__=='__main__':
     spectrum = RealSpectrum.from_Spes(*sys.argv[1:])
-    spectrum.plot_sqrt_scale()
+    ax, line = spectrum.plot_sqrt_scale()
+    fig = ax.figure
+    connection = fig.canvas.mpl_connect("button_press_event", on_click)
     plt.show()
+    fig.canvas.mpl_disconnect(connection)
