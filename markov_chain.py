@@ -94,8 +94,8 @@ if __name__=='__main__':
         markov_probability = np.ones(len(counts))
         for _ in range(30):
             ax_l.plot(E_bound.flatten(), np.repeat(markov_probability, 2))
-            ax_l.set_ylabel("Peakiness")
-            ax_l.set_title("Likelihood of it being a peak")
+            ax_l.set_ylabel("Noisiness")
+            ax_l.set_title("Likelihood of it being just noise")
             # ax_l.set_ylim(-0.05, 1.05)
 
             writer.grab_frame()
