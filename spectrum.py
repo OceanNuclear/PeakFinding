@@ -164,9 +164,9 @@ class RealSpectrum(Histogram):
                 f.write("$MEAS_TIM:\n{} {}\n".format(self.wall_time, self.live_time))
 
             for k, v in self.__dict__.items():
-                if k in "live_time", "wall_time", "boundaries", "bound_units":
+                if k in ("live_time", "wall_time", "boundaries", "bound_units"):
                     continue # take care of these later
-                f.write("${}:\n".format(k.upper()))
+                    f.write("${}:\n".format(k.upper()))
 
                 elif k.upper().endswith("CAL"):
                     f.write(_format_key(k))
@@ -311,7 +311,14 @@ class RealSpectrumInteractive(RealSpectrum):
         A ≈ 0.1-10
         B ≈ 0.001 - 0.01
 
-        FWHM_stat : statiscial constribution
+        # we can explain this this A+B*E equation as follows:
+        variance_{a+b} = variance_a + variance_b
+        sigma_{a+b}^2  = sigma_a^2  + sigma_b^2
+        (2.35 FWHM){a+b}^2 = (2.35 FWHM)a^2 + (2.35 FWHM)b^2
+        FWHM_{a+b}^2   = FWHM_a^2   + FWHM_b^2
+        FWHM_{total}^2 = FWHM_{Poisson}^2 + FWHM_{noise}^2
+
+        FWHM_stat = FWHM_Possion : statiscial constribution
         FWHM_others : other constributions, including noise, drift, etc.
 
         ∵ FWHM_stat = √N = √(charge_of_pulse/e) # e = electron charge
