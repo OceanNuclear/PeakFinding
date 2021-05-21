@@ -90,7 +90,7 @@ if __name__=='__main__':
     fig.suptitle("Markov Chain Peak identification")
     plot_sqrt(E_bound, counts, ax=ax_u)
 
-    with writer.saving(fig, "Markov_chain.mp4", 300):
+    with writer.saving(fig, "../Video/"+"Markov_chain.mp4", 300):
         markov_probability = np.ones(len(counts))
         for _ in range(30):
             ax_l.plot(E_bound.flatten(), np.repeat(markov_probability, 2))

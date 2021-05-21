@@ -180,7 +180,7 @@ class RealSpectrum(Histogram):
 
                 elif k.upper() in ("DATE_END_MEA", "DATE_MEA"):
                     f.write(_format_key(k))
-                    f.write(dt.datetime.strptime(k, "%M/%D/%Y %h:%m:%s\n"))
+                    f.write(dt.datetime.strptime(k, "%D %H:%M:%S\n"))
 
                 elif k == "energy_fit":
                     f.write("$ENER_FIT\n")
@@ -359,6 +359,12 @@ class RealSpectrumInteractive(RealSpectrum):
         self.resolution_coefficients = resolution_coeffs
         return self.resolution_coefficients
 
+    def get_width_at(self, E):
+        assert hasattr(self, "resolution_coefficients"), "Must run one of the add_resolution_coefficients* method first."
+        a, b = self.resolution_coefficients
+        width_at_E = sqrt(a + b*E)
+        return width_at_E
+
     def add_resolution_coefficients_interactively(self, plot_scale="sqrt"):
         """
         Plot the spectrum on a matplotlib figure, on which the user can click and drag to define one or two peaks.
@@ -374,8 +380,6 @@ class RealSpectrumInteractive(RealSpectrum):
         getattr(self, "show_{}_scale".format(plot_scale))()
         self.add_resolution_coefficients( *ary(self._clicked_and_dragged)[-4:, 0] )
 
-    def get_width_at(self, peak_E):
-        assert hasattr(self, "resolution_coefficients"), "Must run one of the add_resolution_coefficients* method first."
 
 def round_to_nearest_sq_int(yticks):
     rounded_values = np.round(yticks).astype(int)
@@ -398,3 +402,11 @@ def _to_datetime(line):
 if __name__=='__main__':
     spectrum = RealSpectrumInteractive.from_Spes(*sys.argv[1:])
     spectrum.show_sqrt_scale()
+    spectrum.add_resolution_coefficients_interactively()
+
+    E_centroid_of_channel = spectrum.boundaries.mean(axis=1)
+    window_sizes = spectrum.get_width_at(E_centroid_of_channel)
+        
+    for ind, window in enumerate(window_sizes):
+        # do something
+        spectrum.counts[ind-window//2:ind+window//2+1] #perform peak finding/fitting on this slice.
