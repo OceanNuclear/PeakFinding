@@ -302,20 +302,38 @@ class RealSpectrumInteractive(RealSpectrum):
         """
         Given min-max energies of ONE or TWO peaks, generate the resolution curve's coefficients
         Resolution curve equation:
+        FWHM = Full width half-maximum = FWHM_overall
+        (unless otherwise specified, FWHM always refers to the overall FWHM)
+        
              FWHM  √(A + B*E)
         R(E)=----= ----------
               E        E
-        So to express the FWHM, we can use
+        A ≈ 0.1-10
+        B ≈ 0.001 - 0.01
+
+        FWHM_stat : statiscial constribution
+        FWHM_others : other constributions, including noise, drift, etc.
+
+        ∵ FWHM_stat = √N = √(charge_of_pulse/e) # e = electron charge
+        caveat : FWHM_stat_HPGe (for HPGe detector specifically) : F(Fano factor) * FWHM_stat
+        ∵ FWHM_overall = √(FWHM_stat^2 + FWHM_others^2) # where others = constant
+        ∴ FWHM_overall = √(  √(B*√E)^2 + A            )
+        # in other words, if A and B are fitted correctly,
+          B = (F * FWHM_stat            )^2
+            = (F * √N                   )^2
+            = (F * √(charge_of_pulse/e) )^2
+
+          A = FWHM_others^2
 
         Paramters (all are float scalars)
         ---------
         peak_min1: left side of the first peak
         peak_min2: right side of the first peak
-        peak2_minmax: if provided, the left and right sides of the second peak.
+        peak2_minmax: if provided, expands to the left and right sides of the second peak.
 
         Returns
         -------
-
+        resolution_coefficient : [A, B] in the equation above.
         """
         E1 = (peak_min1 + peak_max1)/2 # centroid energy for peak 1
         w1 = peak_max1 - peak_min1 # width of peak 1
