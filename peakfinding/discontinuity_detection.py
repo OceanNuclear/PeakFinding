@@ -10,6 +10,10 @@ from scipy import signal
 from sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
 
 if __name__=='__main__':
+    """
+    Using this script, we can see that the "taking derivative" or "smoothen, then take derivative" idea fails terribly
+    """
+
     # from collections import defaultdict
     REPLOT_TICKS = False
     

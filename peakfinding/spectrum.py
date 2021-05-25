@@ -4,7 +4,6 @@ tau = 2*pi
 from numpy import cos, sin, arccos
 from matplotlib import pyplot as plt
 import re
-import sys
 import datetime as dt
 import warnings
 import functools
@@ -109,13 +108,23 @@ class RealSpectrum(Histogram):
             lines = block.split("\n") # remove the last \n
             block_identifier = lines[0].strip(":")
 
-            if block_identifier=="DATA": # All .Spe files must have the data block
-                min_chan, max_chan = regex_num(lines[1], int)
-                counts = ary([float(i) for i in lines[2+min_chan:3+max_chan]])
+            if block_identifier.startswith("DATE"):
+                init_dict[block_identifier.lower()] = _to_datetime(lines[1])
 
             elif block_identifier=="MEAS_TIM": # measurement time
                 live_time, wall_time = [float(i) for i in lines[1].split()]
                 init_dict["live_time"] = live_time
+
+            elif block_identifier=="DATA": # All .Spe files must have the data block
+                min_chan, max_chan = regex_num(lines[1], int)
+                counts = ary([float(i) for i in lines[2+min_chan:3+max_chan]], dtype=int)
+
+            elif block_identifier in ("TUBE_CURRENT", "DATE_IRRAD"):
+                int_vector = regex_num(line[1], int)
+                init_dict[block_identifier.lower()] = int_vector
+
+            elif block_identifier=="ENER_FIT": # energy fit (which is specific to maestro software, non-standard last I checked)
+                init_dict["energy_fit"] = [float(i) for i in lines[1].split()]
 
             elif block_identifier.endswith("CAL"): # calibration
                 num_constants = int(lines[1])
@@ -124,15 +133,10 @@ class RealSpectrum(Histogram):
                 if len(calibration_constants)>num_constants:
                     init_dict[block_identifier.lower() + "_unit"]= calibration_constants[num_constants:]
 
-            elif block_identifier=="ENER_FIT": # energy fit (which is specific to maestro software, non-standard last I checked)
-                init_dict["energy_fit"] = [float(i) for i in lines[1].split()]
-
-            elif block_identifier in ("DATE_END_MEA", "DATE_MEA"):
-                init_dict[block_identifier.lower()] = _to_datetime(lines[1])
-
-            else: # all other types of blocks
-                init_dict[block_identifier.lower()] = "\n".join(lines[1:])
-                # raise KeyError("Invalid BLOCK identifier found: {}".format(block_identifier))
+            elif len(block_identifier)>0: # all other types of blocks (except empty ones)
+                init_dict[block_identifier.lower()] = "\n".join(lines[1:-1])
+                # the last line is always an empty line, caused by splitting at "$" and then "\n",
+                # which are often characters next to each other.
 
         bin_boundaries = ary([np.arange(max_chan+1), np.arange(1, max_chan+2)]).T
 
@@ -158,39 +162,43 @@ class RealSpectrum(Histogram):
     def to_Spe(self, file_path):
         # identify what blocks are writable (all cases that aren't special cases will be handled differently)
         self_dict = self.__dict__
-        with open(filenames, "w") as f:
+        with open(file_path, "w") as f:
             # the first thing is to write measurement time
             if "live_time" in self.__dict__ and "wall_time" in self.__dict__:
-                f.write("$MEAS_TIM:\n{} {}\n".format(self.wall_time, self.live_time))
+                f.write("$MEAS_TIM:\n{} {}\n".format(self.live_time, self.wall_time))
 
             for k, v in self.__dict__.items():
                 if k in ("live_time", "wall_time", "boundaries", "bound_units"):
-                    continue # take care of these later
-                    f.write("${}:\n".format(k.upper()))
+                    continue # live/wall time has taken care of;
+                    # boundaries aren't recorded in the .Spe files to begin with.
 
-                elif k.upper().endswith("CAL"):
-                    f.write(_format_key(k))
-                    f.write(_format_CAL(v)+"\n")
+                elif k.startswith("date_"): # all date format metadata
+                    f.write(_format_Spe_key(k))
+                    f.write(_format_Spe_DATE(v))
 
-                elif k.upper() == "counts":
-                    f.write(_format_key(k))
-                    f.write("{} {}".format(0, len()-1))
-                    f.write("\n".join([str(i).ljust() for i in v]))
-                    f.write("\n")
+                elif k == "counts": # data
+                    f.write(_format_Spe_key("data"))
+                    f.write("{} {}\n".format(0, len(v)-1))
+                    counts_max_width = max(len(str(i)) for i in v)
+                    f.write("\n".join(str(i).rjust(max(8, counts_max_width)) for i in v)+ "\n")
 
-                elif k.upper() in ("DATE_END_MEA", "DATE_MEA"):
-                    f.write(_format_key(k))
-                    f.write(dt.datetime.strptime(k, "%D %H:%M:%S\n"))
-
-                elif k == "energy_fit":
+                elif k == "energy_fit": # non-standard energy calibration constant used by Maestro
                     f.write("$ENER_FIT\n")
-                    f.write(_format_CAL(v)[2:])
+                    f.write(_format_Spe_CAL(v)[2:]+ "\n") # doesn't need the "2\n" at the beginning.
 
-                else:
-                    f.write(_format_key(k))
-                    f.write(v+"\n")
+                elif k.endswith("cal"): # all standard calibration coefficients
+                    f.write(_format_Spe_key(k))
+                    f.write(_format_Spe_CAL(v)+ "\n")
 
-        raise NotImplementedError("Too busy; will write this later")
+                elif not k.startswith("_"): # all other text information
+                    if isinstance(v, list):
+                        f.write(_format_Spe_key(k))
+                        f.write(" ".join(str(i) for i in v)+ "\n")
+                    elif isinstance(v, str):
+                        f.write(_format_Spe_key(k))
+                        f.write(v+ "\n")
+                    else:
+                        warnings.warn("Attribute {} is unexpected and thus is ignored.".format(k), RuntimeWarning)
 
     def to_csv(self, file_path):
         import pandas as pd
@@ -198,29 +206,34 @@ class RealSpectrum(Histogram):
         df.to_csv(file_path, index_label="channel")
         return
 
-def _format_key(key):
-    return "${}:\n".format(key)
+def _format_Spe_key(key):
+    return "${}:\n".format(key.upper())
 
-def _format_CAL(coefficients):
+def _format_Spe_CAL(coefficients):
     formatter_str = "{}\n{}"
-    return formatter_str.format(len(coefficients), " ".join([str(i) for i in coefficients]))
+    return formatter_str.format(len(coefficients), " ".join(str(i) for i in coefficients))
+
+def _format_Spe_DATE(date):
+    return date.strftime("%D %H:%M:%S\n")
 
 class RealSpectrumInteractive(RealSpectrum):
     def __init__(self, counts, boundaries, bound_units, wall_time, **init_dict):
         super().__init__(counts, boundaries, bound_units, wall_time, **init_dict)
         self._clicked_and_dragged = []
 
-    def show_log_scale(self, ax=None, **kwargs):
+    def show_log_scale(self, title=None, **kwargs):
         """
         Identical documentation as show_sqrt_scale
         """
-        ax, line = super().plot_log_scale(ax, **kwargs)
+        ax, line = super().plot_log_scale(ax=None, **kwargs)
+        if title:
+            ax.set_title(title)
         self._setup_fig(ax.figure)
         plt.show()
         self._teardown_fig()
         return
 
-    def show_sqrt_scale(self, ax=None, **kwargs):
+    def show_sqrt_scale(self, title=None, **kwargs):
         """
         Connect button clicks on the plot to other useful stuff.
         Parameters
@@ -232,13 +245,15 @@ class RealSpectrumInteractive(RealSpectrum):
         nothing, as this method only returns when we close the plot.
         """
 
-        ax, line = super().plot_sqrt_scale(ax, False, **kwargs)
+        ax, line = super().plot_sqrt_scale(ax=None, rewrite_yticks=False, **kwargs)
         self.fig = ax.figure
         self._setup_fig(ax.figure)
         ax.set_ylabel("counts")
+        if title:
+            ax.set_title(title)
         yticks = ax.get_yticks()
         yticks = round_to_nearest_sq_int(yticks)
-        ax.set_yticklabels(["{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2])
+        ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
         plt.show()
         self._teardown_fig()
         return
@@ -251,8 +266,8 @@ class RealSpectrumInteractive(RealSpectrum):
         """
         canvas = event.canvas
         if canvas.manager.toolbar._active is None:
-            print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
             if event.inaxes:
+                print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
                 self._clicked_and_dragged.append([event.xdata, event.ydata])
         elif canvas.manager.toolbar._active in ("PAN", "ZOOM"):
             self._event_ax = event.inaxes
@@ -262,20 +277,17 @@ class RealSpectrumInteractive(RealSpectrum):
         ax = event.inaxes
         canvas = event.canvas
         if canvas.manager.toolbar._active is None:
-            print("released at x={}, y={}".format(event.xdata, event.ydata))
             if (len(self._clicked_and_dragged)%2)==1: # odd number of entries in the _clicked_and_dragged list
+                print("released at x={}, y={}".format(event.xdata, event.ydata))
                 self._clicked_and_dragged.append([event.xdata, event.ydata])
             print()
         elif canvas.manager.toolbar._active in ("PAN", "ZOOM"):
-            # if False:
-            #     yticks = ax.get_yticks()
-            #     ax.set_yticklabels(["{:.1f}".format(i) for i in np.sign(yticks)*(yticks)**2])
-            # else:
             ylim = self._event_ax.get_ylim()
-            yticks = np.linspace(*ylim, 10)
+            ylim_range = np.diff(ylim)[0]
+            yticks = np.linspace(ylim[0]+ylim_range*0.02, ylim[1]-ylim_range*0.02, 10)
             yticks = round_to_nearest_sq_int(yticks)
             self._event_ax.set_yticks(yticks)
-            self._event_ax.set_yticklabels(["{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2])
+            self._event_ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
             delattr(self, "_event_ax")
         return event
 
@@ -298,9 +310,9 @@ class RealSpectrumInteractive(RealSpectrum):
             except:
                 pass
 
-    def add_resolution_coefficients(self, peak_min1, peak_max1, *peak2_minmax):
+    def add_fwhm_cal(self, peak_min1, peak_max1, *peak2_minmax):
         """
-        Given min-max energies of ONE or TWO peaks, generate the resolution curve's coefficients
+        Given min-max energies of ONE or TWO peaks, generate the FWHM curve's coefficients
         Resolution curve equation:
         FWHM = Full width half-maximum = FWHM_overall
         (unless otherwise specified, FWHM always refers to the overall FWHM)
@@ -336,36 +348,58 @@ class RealSpectrumInteractive(RealSpectrum):
         ---------
         peak_min1: left side of the first peak
         peak_min2: right side of the first peak
-        peak2_minmax: if provided, expands to the left and right sides of the second peak.
+        peak2_minmax: if provided, expands to the left and right sides of the second (or more) peak(s).
 
         Returns
         -------
-        resolution_coefficient : [A, B] in the equation above.
+        fwhm_coefficient : [A, B] in the equation above.
         """
         E1 = (peak_min1 + peak_max1)/2 # centroid energy for peak 1
         w1 = peak_max1 - peak_min1 # width of peak 1
-        if len(peak2_minmax)==2:
+        if len(peak2_minmax)==0:
+            print("1 peak was clicked. Fully-determined fitting 1 DoF (FWHM=sqrt(B*E))...")
+            # assume A = 0,
+            fwhm_coeff_2 = w1**2/E1
+            # B = FWHM^2/B
+            fwhm_coeffs = ary([0, fwhm_coeff_2]) # A is assumed zero by default
+        elif len(peak2_minmax)==2:
+            print("2 peak were clicked. Fully-determined fitting 2 DoF (FWHM=sqrt(A+B*E))...")
             peak_min2, peak_max2 = peak2_minmax
             E2 = (peak_min2 + peak_max2)/2 # centroid 2
             w2 = peak_max2 - peak_min2 # width 2
             # solve by FWHM **2 = A + B*E:
-            resolution_coeffs = (np.linalg.inv([[1, E1], [1, E2]]) @ ary([w1**2, w2**2]))
+            fwhm_coeffs = (np.linalg.inv([[1, E1], [1, E2]]) @ ary([w1**2, w2**2]))
             # matrix inversion to find solution to  simultaneous equation
         else:
-            # assume A = 0,
-            resolution_coeff_2 = w1**2/E1
-            # B = FWHM^2/B
-            resolution_coeffs = ary([0, resolution_coeff_2]) # A is assumed zero by default
-        self.resolution_coefficients = resolution_coeffs
-        return self.resolution_coefficients
+            print("3+ peak were clicked. Over-determined fitting 1 DoF (FWHM=sqrt(A+B*E))...")
+            # Use more than 2 data point to perform 2 degrees of freedom fitting.
+            # i.e. overdetermined fitting.
+            template = "\nleft-edge x value of peak {num}, right edge x of peak {num}, "
+            explanation = template.format(num=1)+ template.format(num=2)
+            assert len(peak2_minmax)%2==0, "Must enter peak limits in pairs:({}\netc.)".format(explanation.format())
+
+            # get the peak_limits array, shape it into (-1, 2)
+            peak_limits = np.insert(peak2_minmax, 0, [peak_min1, peak_max1])
+            peak_limits = peak_limits.reshape([-1, 2])
+
+            # get the w vector and E vector, both of which are 1D
+            w = peak_limits[:, 1] - peak_limits[:, 0]
+            E = peak_limits.mean(axis=1)
+
+            # perform pseudo-inversion
+            invertible_matrix = ary([np.ones(len(E)), E]).T
+            fwhm_coeffs = np.linalg.pinv(invertible_matrix) @ w
+
+        self.fwhm_cal = fwhm_coeffs
+        return self.fwhm_cal
 
     def get_width_at(self, E):
-        assert hasattr(self, "resolution_coefficients"), "Must run one of the add_resolution_coefficients* method first."
-        a, b = self.resolution_coefficients
+        assert hasattr(self, "fwhm_cal"), "Must run one of the add_fwhm_cal* method first."
+        a, b = self.fwhm_cal
         width_at_E = sqrt(a + b*E)
         return width_at_E
 
-    def add_resolution_coefficients_interactively(self, plot_scale="sqrt"):
+    def add_fwhm_cal_interactively(self, plot_scale="sqrt"):
         """
         Plot the spectrum on a matplotlib figure, on which the user can click and drag to define one or two peaks.
         If >2 clicks were detected, then only the last two will made.
@@ -376,10 +410,39 @@ class RealSpectrumInteractive(RealSpectrum):
         """
         print("Click and drag across the peak(s) (left to right) that you'd like to fit;")
         print("Only the last two click-and-dragged peaks will be used as the data.")
-        self._clicked_and_dragged = [] # clear the list
-        getattr(self, "show_{}_scale".format(plot_scale))()
-        self.add_resolution_coefficients( *ary(self._clicked_and_dragged)[-4:, 0] )
+        while True:
+            self._clicked_and_dragged = [] # clear the list
+            print("\nPlease click and drag across at least one peak:")
+            getattr(self, "show_{}_scale".format(plot_scale))(title="Drag cursor across 1 or 2 peaks (left to right)")
+            last_four_x = ary(self._clicked_and_dragged, dtype=float).reshape([-1,2])[:, 0]
+            if np.isfinite(last_four_x).sum()<4:
+                print("Not enough peaks selected! Please try again:")
+            else:
+                break # exit the loop
 
+        self.add_fwhm_cal( *last_four_x )
+        print("fwhm coefficients are found as", self.fwhm_cal)
+
+    def get_windows(self):
+        """
+        Uses the FWHM equation to calculate the width of peak to be expected at each energy,
+        thus returning the window that fits the various widths 
+
+        Returns
+        -------
+        a mask of shape [len(self.counts), len(self.counts)]
+        """
+        assert hasattr(self, "fwhm_cal"), "Must run one of the add_fwhm_cal* method first before we can calculate the window sizes."
+        E_mid = self.boundaries.mean(axis=1)
+
+        windows = []
+        for mid_E in self.boundaries.mean(axis=1): # calculate the mean energy of that bin.
+            lower_lim, upper_lim = mid_E - self.get_width_at(mid_E)/2, mid_E + self.get_width_at(mid_E)/2
+            above_lower_lim = (self.boundaries>=lower_lim).any(axis=1)
+            below_upper_lim = (self.boundaries<=upper_lim).any(axis=1)
+            window = np.logical_and(above_lower_lim, below_upper_lim)
+            windows.append(window)
+        return ary(windows)
 
 def round_to_nearest_sq_int(yticks):
     rounded_values = np.round(yticks).astype(int)
@@ -400,13 +463,14 @@ def _to_datetime(line):
     return dt.datetime(year, month, day, hour, minute, second)
 
 if __name__=='__main__':
-    spectrum = RealSpectrumInteractive.from_Spes(*sys.argv[1:])
+    import sys
+    print(*sys.argv[1:])
+    spectrum = RealSpectrumInteractive.from_Spes(*sys.argv[1:-1])
+    """
+    Note: inside ipython, the using * (wildcard) in sys.argv will give an UNSORTED (disorderd!) list of the files grepped by wildcard.
+    But outside of ipython sys.argv will give a sorted sys.argv.
+    Therefore you're encouraged to not use * in ipython.
+    """
     spectrum.show_sqrt_scale()
-    spectrum.add_resolution_coefficients_interactively()
-
-    E_centroid_of_channel = spectrum.boundaries.mean(axis=1)
-    window_sizes = spectrum.get_width_at(E_centroid_of_channel)
-        
-    for ind, window in enumerate(window_sizes):
-        # do something
-        spectrum.counts[ind-window//2:ind+window//2+1] #perform peak finding/fitting on this slice.
+    # spectrum.add_fwhm_cal_interactively()
+    spectrum.to_Spe(sys.argv[-1])
