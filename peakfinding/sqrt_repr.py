@@ -37,7 +37,8 @@ def plot_sqrt(*args, ax=None, rewrite_yticks=False):
     ax.set_ylabel("sqrt (counts)")
     if rewrite_yticks:
         ax.set_ylabel("counts")
-        ax.set_yticklabels(np.sign(old_yticks:=ax.get_yticks()) * old_yticks**2)
+        old_yticks = ax.get_yticks()
+        ax.set_yticklabels(np.sign(old_yticks) * old_yticks**2)
     ax.set_title("sqrt-y plot of gamma spec")
     return ax, line
 
