@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 DEMONSTRATE_DECISION_MAKING = True
 
-spectrum = RealSpectrumPeakFinder.from_Spes(*sys.argv[1:])
+spectrum = RealSpectrumPeakFinder.from_multiple_files(*sys.argv[1:])
 spectrum.show_sqrt_scale()
 print("Type in the calibration coefficients (comma separated) ; or press enter to fit the peaks manually.")
 values = input()

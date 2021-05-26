@@ -8,6 +8,9 @@ import datetime as dt
 import warnings
 import functools
 from operator import add as add
+from collections import OrderedDict
+from itertools import zip_longest
+from dataclasses import dataclass
 
 class Histogram():
     """
@@ -52,6 +55,12 @@ class TimeSeries(Histogram):
         bound_units = self.bound_units
         return self.__class__(counts, boundaries, bound_units)
 
+@dataclass
+class IECPeak:
+    """Data class storing one peak specified in an IEC file"""
+    energy : float
+    FWHM : float
+
 class RealSpectrum(Histogram):
     def __init__(self, counts, boundaries, bound_units, wall_time:float, **init_dict):
         """
@@ -92,17 +101,102 @@ class RealSpectrum(Histogram):
         return self.__class__(counts, boundaries, bound_units, wall_time, **init_dict)
 
     @staticmethod
-    def calibration_equation(cls, calibration_constants):
+    def calibration_equation(calibration_constants):
         return np.poly1d(calibration_constants[::-1])
 
     @classmethod
-    def from_Spe(cls, file_name):
+    def from_csv(cls, file_path):
+        """
+        Assume it reads from a file similar to spectrum*.csv in
+        https://github.com/fispact/peakingduck/tree/master/reference
+        i.e.
+        channel,lenergy,uenergy,count
+        0,0.00000000e+00,1.98091030e-01,0.00000000e+00
+        1,1.98091030e-01,4.00114130e-01,0.00000000e+00
+        2,4.00114130e-01,6.02137230e-01,0.00000000e+00
+        ...
+        So no metadata about the count time will be provided, and no metadata about 
+        """
+        df = pd.read_csv(file_path)
+        boundaries = df[df.columns[:2]].values
+        counts = df[df.columns[2]].values.astype(int)
+        wall_time = np.nan
+        return cls(counts, boundaries, "keV", wall_time)
+
+    @classmethod
+    def from_IEC(cls, file_path, read_calibration_equation=True):
+        """
+        Largely taken and adapted from Steve Bradnam's ADRIANA toolbox utility.
+        Credits to him.
+        I can't find the documentations for .IEC spectra file format standard in a reasonable time on Google.
+        I give up and just followed the code
+        """
+        counts, channel_index = [], []
+        sample_peaks_energy, sample_peaks_FWHM = [], []
+        init_dict = {}
+        with open(file_path) as f:
+
+            READ_PEAKS, READ_INTO_DATA = False, False
+            for lineno, line in enumerate(f):
+                line = line[4:] # skip the first four letter because it's always A004.
+                # I have literally no idea why it's that though.
+                if lineno == 1:
+                    live_time, wall_time, num_bins = [float(i) for i in line.split()]
+                    # I assume live_time is on the left and wall_time is on the right.
+                    num_bins = int(num_bins)
+                    init_dict["live_time"] = live_time
+                elif lineno == 2:
+                    init_dict["date_mea"] = dt.datetime.strptime(line.strip(), "%d/%m/%y %H:%M:%S")
+                elif lineno == 3:
+                    init_dict["mca_cal"] = [float(i) for i in line.split()] # p0, p1, p2, p3
+                elif lineno == 4:
+                    init_dict["fwhm_cal"] = [float(i) for i in line.split()] # p0, p1, p2, p3
+
+                # toggling "read-into" flags
+                if "SPARE" in line.strip():
+                    READ_PEAKS, READ_INTO_DATA = True, False
+                    # These are probably just highlighted/fitted peaks that was noted on the program.
+                    # Or some kind of counts vs t variation record.
+                    # Or something else that I'm not entirely sure because I don't have the doucmetation for .IEC files.
+                elif "USERDEFINED" in line.strip():
+                    READ_PEAKS, READ_INTO_DATA = False, True
+
+                elif READ_PEAKS:
+                    data_in_line = [float(i) for i in line.split()]
+                    sample_peaks_energy.extend(data_in_line[::2])
+                    sample_peaks_FWHM.extend(data_in_line[1::2])
+                elif READ_INTO_DATA:
+                    # channel_index.append( int(line.split()[0]) )
+                    counts.extend([ int(i) for i in line.split()[1:] ])
+
+                elif line.strip=="": # toggle both to off when the block ends and we hit an empty line.
+                    READ_PEAKS, READ_INTO_DATA = False, False
+
+        init_dict["sample_peaks"] = [IECPeak(energy, FWHM) for energy, FWHM in zip(sample_peaks_energy, sample_peaks_FWHM)]
+        counts = ary(counts[:num_bins], dtype=int)
+        # channel_index = ary(channel_index) # not that useful TBH, just gonna ignore it.
+
+        # default : saving as bin boundaries
+        boundaries = ary([np.arange(num_bins), np.arange(1, num_bins+1)]).T
+        bound_units = "bin"
+
+        # if read_calibration_equation: convert the bin boundaries values into energy.
+        if init_dict["mca_cal"]==[0, 0, 0, 0]:
+            read_calibration_equation = False
+        if read_calibration_equation:
+            boundaries = cls.calibration_equation(init_dict["mca_cal"])(boundaries)
+            bound_units = "keV"
+
+        return cls(counts, boundaries, bound_units, wall_time, **init_dict)
+
+    @classmethod
+    def from_Spe(cls, file_path):
         """
         Reads from an .Spe file and creates an object.
         """
         init_dict = {}
         # default unit is bins
-        with open(file_name) as f:
+        with open(file_path) as f:
             text = f.read()
         for block in text.split("$"):
             lines = block.split("\n") # remove the last \n
@@ -117,6 +211,8 @@ class RealSpectrum(Histogram):
 
             elif block_identifier=="DATA": # All .Spe files must have the data block
                 min_chan, max_chan = regex_num(lines[1], int)
+                if min_chan!=0:
+                    raise FutureWarning("lowest channel number isn't 0, this can cause error in the future!")
                 counts = ary([float(i) for i in lines[2+min_chan:3+max_chan]], dtype=int)
 
             elif block_identifier in ("TUBE_CURRENT", "DATE_IRRAD"):
@@ -139,13 +235,16 @@ class RealSpectrum(Histogram):
                 # which are often characters next to each other.
 
         bin_boundaries = ary([np.arange(max_chan+1), np.arange(1, max_chan+2)]).T
+        # bin_boundaries = ary([np.arange(max_chan+1), np.arange(1, max_chan+2)]).T - 0.5
+        # it's not clear whether we should subtract 0.5 to make the centroid of the first bin 0 or not.
+        # I'll assume not.
 
         # check for the clibration equation
         if "mca_cal" in init_dict or "energy_fit" in init_dict:
             if "mca_cal" in init_dict:
-                calibration_eqn = cls.calibration_equation(cls,init_dict["mca_cal"])
+                calibration_eqn = cls.calibration_equation(init_dict["mca_cal"])
             elif "energy_fit" in init_dict:
-                calibration_eqn = cls.calibration_equation(cls,init_dict["energy_fit"])
+                calibration_eqn = cls.calibration_equation(init_dict["energy_fit"])
             boundaries = calibration_eqn(bin_boundaries)
             bound_units = init_dict.get("mca_cal_unit", ["keV",])[0]
 
@@ -156,21 +255,71 @@ class RealSpectrum(Histogram):
         return cls(counts, boundaries, bound_units, wall_time, **init_dict)
 
     @classmethod
-    def from_Spes(cls, *filenames):
-        return functools.reduce(add, [cls.from_Spe(fname) for fname in filenames])
+    def from_multiple_files(cls, *filenames):
+        """
+        Create a Spectrum object from one of the 3 accepted file types:
+        .csv, .IEC, .Spe
+        e.g. RealSpectrum.from_multiple_files("spectrum1.csv", "spectrum2.csv", "spectrum3.IEC")
+        """
+        spectra_created = [getattr(cls, "from_{}".format(fname.split(".")[-1]))(fname) for fname in filenames]
+        return functools.reduce(add, spectra_created)
 
-    def to_Spe(self, file_path):
-        # identify what blocks are writable (all cases that aren't special cases will be handled differently)
-        self_dict = self.__dict__
-        with open(file_path, "w") as f:
-            # the first thing is to write measurement time
+    def to_Spe(self, file_path, mimic_MAESTRO=True):
+        """
+        Documentation for the standards about the .Spe file is found here:
+        https://inis.iaea.org/collection/NCLCollectionStore/_Public/32/042/32042415.pdf
+        p.31
+
+        This method is slightly bodged,
+        as I forced a certain blocks to be written first when mimic_MAESTRO = True;
+        but when mimic_MAESTRO = False I just write the blocks without order.
+        The writing logic that handles writing different blocks can be found in the with statement after the else.
+
+        Parameters
+        ----------
+        file_path: name of the output file (should end in .Spe)
+        mimic_MAESTRO: boolean for whether the blocks should be arranged in exactly the same order as a MAESTRO .Spe file is.
+        """
+        # CAREFULLY write the top half of the file, which includes $MEA_TIM that needs to be treated carefully.
+        if mimic_MAESTRO:
+            self_dict = OrderedDict()
+            with open(file_path, "w") as f:
+                # $SPEC_ID
+                f.write(_format_Spe_key("spec_id"))
+                f.write(self.__dict__.get("spec_id", "\n"))
+                # $SPEC_REM
+                f.write(_format_Spe_key("spec_rem"))
+                f.write(self.__dict__.get("spec_rem", "\n\n\n"))
+                f.write(_format_Spe_key("spec_rem"))
+                f.write( _format_Spe_DATE(self.__dict__.get("date_mea", dt.datetime.now())) )
+                # $MEAS_TIM
+                live_time, wall_time = self.__dict__.get("live_time", np.nan), self.__dict__.get("wall_time", np.nan)
+                f.write("$MEAS_TIM:\n{} {}\n".format(live_time, wall_time))
+
+            # all other keys that are also block_identifier used in a MAESTRO .Spe file
+            other_MAESTRO_keys = ["data", "roi", "presets", "ener_fit", "mca_cal", "shape_cal"]
+            for key in other_MAESTRO_keys:
+                if hasattr(self, key):
+                    self_dict[key] = self.__dict__[key]
+
+            # update all other keys
+            for key in self.__dict__.keys():
+                # be careful not to include the keys corresponding to blocks that are already written.
+                if key not in ("wall_time", "live_time", "spec_rem", "spec_id", "date_mea"):
+                    self_dict[key] = self.__dict__[key]
+        else:
+            # just dump in every attribute without caring about the order.
+            self_dict = self.__dict__
+        # handle every allowed block under the sun. (or rather, under the IAEA convention (aforementioned file standard))
+        with open(file_path, "a+") as f:
+            # the first thing is to write measurement time, because this one is hard to handle.
             if "live_time" in self.__dict__ and "wall_time" in self.__dict__:
                 f.write("$MEAS_TIM:\n{} {}\n".format(self.live_time, self.wall_time))
 
             for k, v in self.__dict__.items():
                 if k in ("live_time", "wall_time", "boundaries", "bound_units"):
-                    continue # live/wall time has taken care of;
-                    # boundaries aren't recorded in the .Spe files to begin with.
+                    continue # live/wall time has already been taken care of;
+                    # and boundaries (and units) aren't recorded in the .Spe files to begin with.
 
                 elif k.startswith("date_"): # all date format metadata
                     f.write(_format_Spe_key(k))
@@ -205,6 +354,65 @@ class RealSpectrum(Histogram):
         df = pd.DataFrame(ary([self.counts, *self.boundaries.T]).T, columns=["lenergy", "uenergy", "count"])
         df.to_csv(file_path, index_label="channel")
         return
+
+    def to_IEC(self, file_path):
+        with open(file_path, "w") as f:
+            # header
+            f.write(_format_IEC_line("     peakfinding   1   1     0"))
+            # live, real time and number of channels
+            f.write(_format_IEC_line("{:14}{:14}{:6}".format(
+                self.__dict__.get("live_time", np.nan),
+                self.__dict__.get("wall_time", np.nan),
+                len(self.counts)
+                ))
+            )
+            # date of acquisition
+            f.write(_format_IEC_line(self.__dict__.get("date_mea", dt.datetime.now()).strftime("%d/%m/%y %H:%M:%S")))
+            # energy calibration coefficients
+            f.write(_format_IEC_vector_line(self.__dict__.get("mca_cal", [0,0,0,0]), 14))
+            # FWHM calibration coefficients
+            if hasattr(self, "fwhm_cal") and len(self.fwhm_cal)>0:
+                f.write(_format_IEC_vector_line(self.fwhm_cal, 14)[:-5]+"1    \n")
+            else:
+                f.write(_format_IEC_line()) #otherwise write an empty line
+            # 4 empty lines
+            f.write(_format_IEC_line())
+            f.write(_format_IEC_line())
+            f.write(_format_IEC_line())
+            f.write(_format_IEC_line())
+            f.write(_format_IEC_line("SPARE"))
+            num_peak_lines = -1
+            # write the sample peaks that was previously recorded
+            for num_peak_lines, (peak1, peak2) in enumerate(
+                zip_longest(self.__dict__.get("sample_peaks", [])[::2], self.__dict__.get("sample_peaks", [])[1::2], 
+                fillvalue=IECPeak(0, 0) )):
+                f.write(_format_IEC_vector_line([peak1.energy, peak1.FWHM, peak2.energy, peak2.FWHM], 16))
+            while num_peak_lines<15:
+                f.write(_format_IEC_vector_line([0, 0, 0, 0], 16))
+                num_peak_lines += 1
+            # 11 empty lines
+            for _ in range(11):
+                f.write(_format_IEC_line())
+            # data block
+            f.write(_format_IEC_line("USERDEFINED"))
+            for data_line_no, vec5 in enumerate(zip_longest(
+                                        self.counts[::5],
+                                        self.counts[1::5],
+                                        self.counts[2::5],
+                                        self.counts[3::5],
+                                        self.counts[4::5],
+                                        fillvalue=0)):
+                f.write(_format_IEC_data_line(data_line_no, vec5))
+        return
+
+def _format_IEC_line(text=" "*64):
+    return ("A004"+text).ljust(68)+"\n"
+
+def _format_IEC_vector_line(vec, num_space_per_element):
+    return _format_IEC_line("".join(str(e).rjust(num_space_per_element) for e in vec))
+
+def _format_IEC_data_line(dat_line_no, vec5):
+    return "A004{:6d}{:10d}{:10d}{:10d}{:10d}{:10d}   \n".format(5*dat_line_no, *vec5)
 
 def _format_Spe_key(key):
     return "${}:\n".format(key.upper())
@@ -415,7 +623,7 @@ class RealSpectrumInteractive(RealSpectrum):
             print("\nPlease click and drag across at least one peak:")
             getattr(self, "show_{}_scale".format(plot_scale))(title="Drag cursor across 1 or 2 peaks (left to right)")
             last_four_x = ary(self._clicked_and_dragged, dtype=float).reshape([-1,2])[:, 0]
-            if np.isfinite(last_four_x).sum()<4:
+            if np.isfinite(last_four_x).sum()<2:
                 print("Not enough peaks selected! Please try again:")
             else:
                 break # exit the loop
@@ -465,7 +673,7 @@ def _to_datetime(line):
 if __name__=='__main__':
     import sys
     print(*sys.argv[1:])
-    spectrum = RealSpectrumInteractive.from_Spes(*sys.argv[1:-1])
+    spectrum = RealSpectrumInteractive.from_multiple_files(*sys.argv[1:-1])
     """
     Note: inside ipython, the using * (wildcard) in sys.argv will give an UNSORTED (disorderd!) list of the files grepped by wildcard.
     But outside of ipython sys.argv will give a sorted sys.argv.

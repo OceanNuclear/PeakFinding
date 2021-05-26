@@ -10,4 +10,4 @@ Therefore you're encouraged to not use * in ipython.
 """
 spectrum = RealSpectrumInteractive.from_multiple_files(*sys.argv[1:-1])
 spectrum.show_sqrt_scale()
-spectrum.to_Spe(sys.argv[-1]+".Spe")
+spectrum.to_IEC(sys.argv[-1]+".IEC")

@@ -237,7 +237,7 @@ if __name__=='__main__':
     import sys
     DEMONSTRATE_DECISION_MAKING = True
 
-    spectrum = RealSpectrumPeakFinder.from_Spes(*sys.argv[1:])
+    spectrum = RealSpectrumPeakFinder.from_multiple_files(*sys.argv[1:])
     spectrum.show_sqrt_scale()
     spectrum.add_fwhm_cal_interactively()
     # spectrum.fwhm_cal = ary([1.70101954, 0.02742255])

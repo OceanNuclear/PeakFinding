@@ -3,7 +3,7 @@ import sys
 import matplotlib.pyplot as plt
 
 if __name__=='__main__':
-    spectrum = RealSpectrum.from_Spes(*sys.argv[1:-1])
+    spectrum = RealSpectrum.from_multiple_files(*sys.argv[1:-1])
     # spectrum.to_Spe(sys.argv[-1]+".Spe")
     ax, line = spectrum.plot_sqrt_scale()
     ax.set_xlim(20, 2922)
