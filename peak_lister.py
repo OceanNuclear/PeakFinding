@@ -61,7 +61,7 @@ plt.show()
 while True:
     answer = input("Acceptable? (y/n) (y=save to file {})\n".format(sys.argv[-1])).lower()
     if answer=="y":
-        df.to_csv(sys.argv[-1])
+        df.to_csv(sys.argv[-1], index_label="bin")
         break
     elif answer=="n":
         pass

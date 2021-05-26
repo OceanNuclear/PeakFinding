@@ -62,14 +62,14 @@ class IECPeak:
     FWHM : float
 
 class RealSpectrum(Histogram):
-    def __init__(self, counts, boundaries, bound_units, wall_time:float, **init_dict):
+    def __init__(self, counts, boundaries, bound_units, live_time:float, **init_dict):
         """
         Creates a Real Spectrum, tailored to gamma spectra, but can be used for other particle count vs energy spectra.
 
-        wall_time: float scalar denoting the duration of this spectrum
+        live_time: float scalar denoting the duration of this spectrum
         """
         super().__init__(counts, boundaries, bound_units)
-        self.wall_time = wall_time # duration in seconds seconds
+        self.live_time = live_time # duration in seconds
         self.__dict__.update(init_dict)
 
     def __add__(self, rs2): # rs2 = RealSpectrum 2
@@ -79,7 +79,7 @@ class RealSpectrum(Histogram):
         init_dict.pop("counts")
         init_dict.pop("boundaries")
         init_dict.pop("bound_units")
-        init_dict.pop("wall_time")
+        init_dict.pop("live_time")
 
         # defined in super().__init__:
         counts = rs2.counts + self.counts
@@ -87,18 +87,18 @@ class RealSpectrum(Histogram):
         bound_units = self.bound_units
 
         # special cases:
-        wall_time = self.wall_time + rs2.wall_time
+        live_time = self.live_time + rs2.live_time
 
         if "date_end_mea" in init_dict.keys():
             if hasattr(rs2, "date_end_mea"):
                 init_dict["date_end_mea"] = ts2.date_end_mea
             else:
                 init_dict["date_end_mea"] = None
-        if "live_time" in init_dict.keys():
-            if hasattr(self, "live_time") and hasattr(rs2, "live_time"):
-                init_dict["live_time"] = self.live_time + rs2.live_time
+        if "wall_time" in init_dict.keys():
+            if hasattr(self, "wall_time") and hasattr(rs2, "wall_time"):
+                init_dict["wall_time"] = self.wall_time + rs2.wall_time
 
-        return self.__class__(counts, boundaries, bound_units, wall_time, **init_dict)
+        return self.__class__(counts, boundaries, bound_units, live_time, **init_dict)
 
     @staticmethod
     def calibration_equation(calibration_constants):
@@ -117,11 +117,12 @@ class RealSpectrum(Histogram):
         ...
         So no metadata about the count time will be provided, and no metadata about 
         """
-        df = pd.read_csv(file_path)
+        import pandas as pd
+        df = pd.read_csv(file_path, index_col=[0])
         boundaries = df[df.columns[:2]].values
         counts = df[df.columns[2]].values.astype(int)
-        wall_time = np.nan
-        return cls(counts, boundaries, "keV", wall_time)
+        live_time = np.nan
+        return cls(counts, boundaries, "keV", live_time)
 
     @classmethod
     def from_IEC(cls, file_path, read_calibration_equation=True):
@@ -142,9 +143,9 @@ class RealSpectrum(Histogram):
                 # I have literally no idea why it's that though.
                 if lineno == 1:
                     live_time, wall_time, num_bins = [float(i) for i in line.split()]
-                    # I assume live_time is on the left and wall_time is on the right.
+                    # I assume wall_time is on the left and live_time is on the right.
                     num_bins = int(num_bins)
-                    init_dict["live_time"] = live_time
+                    init_dict["wall_time"] = wall_time
                 elif lineno == 2:
                     init_dict["date_mea"] = dt.datetime.strptime(line.strip(), "%d/%m/%y %H:%M:%S")
                 elif lineno == 3:
@@ -187,7 +188,7 @@ class RealSpectrum(Histogram):
             boundaries = cls.calibration_equation(init_dict["mca_cal"])(boundaries)
             bound_units = "keV"
 
-        return cls(counts, boundaries, bound_units, wall_time, **init_dict)
+        return cls(counts, boundaries, bound_units, live_time, **init_dict)
 
     @classmethod
     def from_Spe(cls, file_path):
@@ -207,7 +208,7 @@ class RealSpectrum(Histogram):
 
             elif block_identifier=="MEAS_TIM": # measurement time
                 live_time, wall_time = [float(i) for i in lines[1].split()]
-                init_dict["live_time"] = live_time
+                init_dict["wall_time"] = wall_time
 
             elif block_identifier=="DATA": # All .Spe files must have the data block
                 min_chan, max_chan = regex_num(lines[1], int)
@@ -252,7 +253,7 @@ class RealSpectrum(Histogram):
             boundaries = bin_boundaries
             bound_units = "bins"
             
-        return cls(counts, boundaries, bound_units, wall_time, **init_dict)
+        return cls(counts, boundaries, bound_units, live_time, **init_dict)
 
     @classmethod
     def from_multiple_files(cls, *filenames):
@@ -286,18 +287,19 @@ class RealSpectrum(Histogram):
             with open(file_path, "w") as f:
                 # $SPEC_ID
                 f.write(_format_Spe_key("spec_id"))
-                f.write(self.__dict__.get("spec_id", "\n"))
+                f.write(self.__dict__.get("spec_id", "")+"\n")
                 # $SPEC_REM
                 f.write(_format_Spe_key("spec_rem"))
-                f.write(self.__dict__.get("spec_rem", "\n\n\n"))
-                f.write(_format_Spe_key("spec_rem"))
-                f.write( _format_Spe_DATE(self.__dict__.get("date_mea", dt.datetime.now())) )
+                f.write(self.__dict__.get("spec_rem", "\n\n")+"\n")
+                # $DATE_MEA
+                f.write(_format_Spe_key("date_mea"))
+                f.write(_format_Spe_DATE(self.__dict__.get("date_mea", dt.datetime.now())) )
                 # $MEAS_TIM
                 live_time, wall_time = self.__dict__.get("live_time", np.nan), self.__dict__.get("wall_time", np.nan)
                 f.write("$MEAS_TIM:\n{} {}\n".format(live_time, wall_time))
 
             # all other keys that are also block_identifier used in a MAESTRO .Spe file
-            other_MAESTRO_keys = ["data", "roi", "presets", "ener_fit", "mca_cal", "shape_cal"]
+            other_MAESTRO_keys = ["counts", "roi", "presets", "ener_fit", "mca_cal", "shape_cal"]
             for key in other_MAESTRO_keys:
                 if hasattr(self, key):
                     self_dict[key] = self.__dict__[key]
@@ -305,19 +307,22 @@ class RealSpectrum(Histogram):
             # update all other keys
             for key in self.__dict__.keys():
                 # be careful not to include the keys corresponding to blocks that are already written.
-                if key not in ("wall_time", "live_time", "spec_rem", "spec_id", "date_mea"):
+                if key not in ("live_time", "wall_time", "spec_rem", "spec_id", "date_mea"):
                     self_dict[key] = self.__dict__[key]
         else:
             # just dump in every attribute without caring about the order.
             self_dict = self.__dict__
+            # clear the file
+            with open(file_path, "w") as f:
+                pass # write nothing, empty file.
         # handle every allowed block under the sun. (or rather, under the IAEA convention (aforementioned file standard))
         with open(file_path, "a+") as f:
             # the first thing is to write measurement time, because this one is hard to handle.
-            if "live_time" in self.__dict__ and "wall_time" in self.__dict__:
-                f.write("$MEAS_TIM:\n{} {}\n".format(self.live_time, self.wall_time))
+            if "wall_time" in self.__dict__ and "live_time" in self_dict:
+                f.write("$MEAS_TIM:\n{} {}\n".format(self.wall_time, self.live_time))
 
-            for k, v in self.__dict__.items():
-                if k in ("live_time", "wall_time", "boundaries", "bound_units"):
+            for k, v in self_dict.items():
+                if k in ("wall_time", "live_time", "boundaries", "bound_units"):
                     continue # live/wall time has already been taken care of;
                     # and boundaries (and units) aren't recorded in the .Spe files to begin with.
 
@@ -361,18 +366,21 @@ class RealSpectrum(Histogram):
             f.write(_format_IEC_line("     peakfinding   1   1     0"))
             # live, real time and number of channels
             f.write(_format_IEC_line("{:14}{:14}{:6}".format(
-                self.__dict__.get("live_time", np.nan),
                 self.__dict__.get("wall_time", np.nan),
+                self.__dict__.get("live_time", np.nan),
                 len(self.counts)
                 ))
             )
             # date of acquisition
             f.write(_format_IEC_line(self.__dict__.get("date_mea", dt.datetime.now()).strftime("%d/%m/%y %H:%M:%S")))
             # energy calibration coefficients
-            f.write(_format_IEC_vector_line(self.__dict__.get("mca_cal", [0,0,0,0]), 14))
+            if hasattr(self, "mca_cal") and len(self.mca_cal)>0:
+                f.write(_format_IEC_vector_line([*self.mca_cal, *[0 for _ in range( 4-len(self.mca_cal)) ]], 14))
+            else:
+                f.write(_format_IEC_line()) #otherwise write an empty line
             # FWHM calibration coefficients
             if hasattr(self, "fwhm_cal") and len(self.fwhm_cal)>0:
-                f.write(_format_IEC_vector_line(self.fwhm_cal, 14)[:-5]+"1    \n")
+                f.write(_format_IEC_vector_line([*self.fwhm_cal, *[0 for _ in range( 4-len(self.fwhm_cal) )]], 14)[:-5]+"1    \n")
             else:
                 f.write(_format_IEC_line()) #otherwise write an empty line
             # 4 empty lines
@@ -425,8 +433,8 @@ def _format_Spe_DATE(date):
     return date.strftime("%D %H:%M:%S\n")
 
 class RealSpectrumInteractive(RealSpectrum):
-    def __init__(self, counts, boundaries, bound_units, wall_time, **init_dict):
-        super().__init__(counts, boundaries, bound_units, wall_time, **init_dict)
+    def __init__(self, counts, boundaries, bound_units, live_time, **init_dict):
+        super().__init__(counts, boundaries, bound_units, live_time, **init_dict)
         self._clicked_and_dragged = []
 
     def show_log_scale(self, title=None, **kwargs):
