@@ -629,7 +629,7 @@ class RealSpectrumInteractive(RealSpectrum):
                 break # exit the loop
 
         self.add_fwhm_cal( *last_four_x )
-        print("fwhm coefficients are found as", self.fwhm_cal)
+        print("FWHM coefficients are found as", ", ".join(str(i) for i in self.fwhm_cal))
 
     def get_windows(self):
         """

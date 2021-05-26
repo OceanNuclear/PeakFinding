@@ -89,12 +89,15 @@ class RealSpectrumCurvature(RealSpectrumInteractive):
         bool_array = curvature<=threshold_values
         return bool_array
 
-def threshold_curve_function_generator(numerator, A, B):
+def threshold_curve_function_generator(numerator, *coeffs):
     """
     The idea is that A, B are the fwhm_cal;
     while numerator is just a multiplier to scale the entire function by.
     """
-    return lambda E: numerator/sqrt(A * B*E)
+    def equation(E):
+        inside_sqrt = ary([c * E**n for n, c in enumerate(coeffs)]).sum(axis=0)
+        return numerator/sqrt(inside_sqrt)
+    return equation
 
 class RealSpectrumLikelihood(RealSpectrumInteractive):
     @staticmethod
@@ -129,11 +132,32 @@ class RealSpectrumLikelihood(RealSpectrumInteractive):
         """
         return self.get_peakiness() >= threshold
 
-    def apply_threshold_on_noisiness(self, threshold=0.3):
+    def get_full_sized_peakiness(self):
+        """
+        Spread out the peakiness value of each window across the entire window,
+        rather than assigning it to the window itself.
+
+        """
+        windows = self.get_windows()
+        peakiness = (windows.astype(float).T * self.get_peakiness()).T
+        return np.where(windows, peakiness, np.nan)
+
+    def apply_function_on_peakiness(self, function):
+        """Taking nanmean, nanmean, nanmax along axis=1 yields different versions of the peakiness values."""
+        peakiness_matrix = self.get_full_sized_peakiness()
+        return function(peakiness_matrix, axis=0)
+
+    def apply_threshold_on_full_peakiness(self, threshold=0.9, function=np.nanmean):
+        function_output = self.apply_function_on_peakiness(function)
+        return function_output >= threshold
+
+    def apply_threshold_on_noisiness(self, threshold):
         """
         Calculates whether each part of the spectrum is noise or not.
         What get_peakiness actually gets is the likelihood of a window containing non-noise.
         So get_peakiness can also be interpreted as non-noisiness.
+
+        nanmin <= threshold : True if ANY of the peakiness associated with this bin is below the threshold.
 
         Logic: For each bin,
             if ANY window including this bin has a non-noisiness level <= threshold, 
@@ -141,15 +165,13 @@ class RealSpectrumLikelihood(RealSpectrumInteractive):
                 i.e. noisiness >= 1 - threshold,
             Then we consider this bin as containing noise.
         """
-        windows = self.get_windows()
-        truth_vector = self.get_peakiness()<= threshold
+        nanmin_output = self.apply_function_on_peakiness(np.nanmin)
+        return nanmin_output <= threshold
 
-        return (windows.T * truth_vector).T.any(axis=1)
-
-    def full_sized_peakiness(self):
-        windows = self.get_windows()
-        peakiness = (windows.astype(float).T * self.get_peakiness()).T
-        return np.where(windows, peakiness, np.nan)
+    def determine_noise_floor(self, threshold=0.5, function=np.nanmax):
+        truth_vector = self.apply_threshold_on_noisiness(threshold)
+        peaks_replaced_by_nans = np.where(truth_vector, self.counts, np.nan)
+        return peaks_replaced_by_nans
 
 class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
     def bool_array_to_peak_indices(self, bool_array):
@@ -170,7 +192,7 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
 
         return ary([peak_ledge_indices, peak_redge_indices]).T
 
-    def default_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.9):
+    def faster_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.7):
         """
         First apply the curvature thresholding to find the peaks.
         Then within each peak, find the likelihood.
@@ -178,7 +200,7 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
         Parameters
         ----------
         curvature_threshold: threshold parameter inputted into the RealSpectrumCurvature.apply_threshold_on_curvature method.
-        peakiness_threshold: threshold parameter inputted into the RealSpectrumLikelihood.apply_threshold_on_peakiness method.
+        peakiness_threshold: threshold parameter inputted into the RealSpectrumLikelihood.apply_threshold_on_full_peakiness method.
             For both of these paramteres: a default best threshold is already provided if they're omitted in the call signature.
 
         Returns
@@ -204,22 +226,21 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
 
         return ary(new_peak_indices)
 
-    def slower_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.9):
+    def default_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.7):
         """
-        Slower than default_peak_identifier becdause both the curvatures and peakiness are calculted for the entire spectrum.
-        default is not only faster, but also better.
+        Slower than faster_peak_identifier becdause both the curvatures and peakiness are calculted for the entire spectrum.
 
-        See the docstring for default_peak_identifier for Parameters and Returns
+        See the docstring for faster_peak_identifier for Parameters and Returns
         """
         print("Calculating curvatures in the spectrum, then applying a threshold to cut out peaks:")
         curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
 
         print("Calculating likelihood of each peak containing not-noise...")
-        peakiness_bool_array = self.apply_threshold_on_peakiness(threshold=peakiness_threshold)
+        peakiness_bool_array = self.apply_threshold_on_full_peakiness(threshold=peakiness_threshold)
 
         return self.bool_array_to_peak_indices(np.logical_and(curvature_bool_array, peakiness_bool_array))
 
-    def plot_identified_peaks(self, ax, peak_indices, plot_scale="sqrt", **plot_kwargs):
+    def highlight_peaks(self, ax, peak_indices, plot_scale="sqrt", **plot_kwargs):
         """
         To be used after a self.plot_sqrt_repr 
         """
@@ -231,48 +252,3 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
         for l_index, r_index in peak_indices:
             ax.fill_between(self.boundaries[l_index:r_index].flatten(), np.repeat(y[l_index:r_index], 2), color="C1", **plot_kwargs)
         return ax
-
-if __name__=='__main__':
-    from matplotlib import pyplot as plt
-    import sys
-    DEMONSTRATE_DECISION_MAKING = True
-
-    spectrum = RealSpectrumPeakFinder.from_multiple_files(*sys.argv[1:])
-    spectrum.show_sqrt_scale()
-    spectrum.add_fwhm_cal_interactively()
-    # spectrum.fwhm_cal = ary([1.70101954, 0.02742255])
-
-    import inspect
-    if DEMONSTRATE_DECISION_MAKING:
-        # calculate the required values first.
-        curvature_coef = spectrum.calculate_sqrt_curvature()
-        peakiness = spectrum.get_peakiness()
-        peak_indices = spectrum.default_peak_identifier()
-        curvature_threshold, peakiness_threshold = inspect.signature(spectrum.default_peak_identifier).parameters.values()
-
-
-        # actual spectrum (ax_u)
-        fig, (ax_u, ax_m, ax_l) = plt.subplots(3, 1, sharex=True)
-        spectrum.plot_sqrt_scale(ax=ax_u)
-        spectrum.plot_identified_peaks(ax_u, peak_indices)
-
-        # curvature (ax_m)
-        ax_m.plot(spectrum.boundaries.flatten(), np.repeat(curvature_coef, 2))
-        threshold_func = threshold_curve_function_generator(curvature_threshold.default, *spectrum.fwhm_cal)
-        ax_m.plot(spectrum.boundaries.flatten(), threshold_func(spectrum.boundaries.flatten()) )
-        ax_m.set_ylim(-5, -0.1)
-        ax_m.set_title("Curvatrue")
-
-        # peakiness (ax_l)
-        ax_l.plot(spectrum.boundaries.flatten(), np.repeat(peakiness, 2))
-        ax_l.plot(spectrum.boundaries.flatten(), np.repeat(peakiness_threshold.default, len(spectrum.boundaries.flatten())))
-        ax_l.set_title("Peakiness")
-
-        plt.show()
-
-    else:
-        ax, line = spectrum.plot_sqrt_scale()
-        peak_indices = spectrum.default_peak_identifier()
-        spectrum.plot_identified_peaks(ax, peak_indices)
-
-        plt.show()

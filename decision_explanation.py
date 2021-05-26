@@ -19,7 +19,7 @@ import inspect
 if DEMONSTRATE_DECISION_MAKING:
     # calculate the required values first.
     curvature_coef = spectrum.calculate_sqrt_curvature()
-    peakiness = spectrum.get_peakiness()
+    peakiness = spectrum.apply_function_on_peakiness(np.nanmean)
     peak_indices = spectrum.default_peak_identifier()
     curvature_threshold, peakiness_threshold = inspect.signature(spectrum.default_peak_identifier).parameters.values()
 
@@ -27,7 +27,7 @@ if DEMONSTRATE_DECISION_MAKING:
     # actual spectrum (ax_u)
     fig, (ax_u, ax_m, ax_l) = plt.subplots(3, 1, sharex=True)
     spectrum.plot_sqrt_scale(ax=ax_u)
-    spectrum.plot_identified_peaks(ax_u, peak_indices)
+    spectrum.highlight_peaks(ax_u, peak_indices)
 
     # curvature (ax_m)
     ax_m.plot(spectrum.boundaries.flatten(), np.repeat(curvature_coef, 2))
@@ -46,6 +46,6 @@ if DEMONSTRATE_DECISION_MAKING:
 else:
     ax, line = spectrum.plot_sqrt_scale()
     peak_indices = spectrum.default_peak_identifier()
-    spectrum.plot_identified_peaks(ax, peak_indices)
+    spectrum.highlight_peaks(ax, peak_indices)
 
     plt.show()
