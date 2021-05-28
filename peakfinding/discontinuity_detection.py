@@ -7,7 +7,7 @@ import pandas as pd
 import sys, os
 from scipy.ndimage import filters, gaussian_filter1d
 from scipy import signal
-from sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
+from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
 
 if __name__=='__main__':
     """

@@ -396,7 +396,7 @@ class RealSpectrum(Histogram):
                 zip_longest(self.__dict__.get("sample_peaks", [])[::2], self.__dict__.get("sample_peaks", [])[1::2], 
                 fillvalue=IECPeak(0, 0) )):
                 f.write(_format_IEC_vector_line([peak1.energy, peak1.FWHM, peak2.energy, peak2.FWHM], 16))
-            while num_peak_lines<15:
+            while num_peak_lines<35:
                 f.write(_format_IEC_vector_line([0, 0, 0, 0], 16))
                 num_peak_lines += 1
             # 11 empty lines
