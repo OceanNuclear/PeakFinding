@@ -4,8 +4,18 @@ tau = 2*pi
 from numpy import cos, sin, arccos
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-from poisson_distribution import Poisson, Chi2
-from sqrt_repr import plot_sqrt
+from peakfinding.poisson_distribution import Poisson, Chi2
+from peakfinding.sqrt_repr import plot_sqrt
+
+"""
+Use a "voting" idea to decide which one of them is noise and which one isn't:
+    1. Each bin has 1.0 vote to start with.
+    2. In each round they must vote away a maximum of 1.0 times of the votes it currently owns.
+    3. It gives its neighbouring bin the maximum possible vote if it has negative log likelihood = 0.
+    4. Else it gives chi2(1).cdf(negative log likelihood) times its maximum possible vote
+    5. The maximum possible vote is (current vote it holds)/(window_width-1) 
+    6. Then repeat from step 2 from that point onwards.
+"""
 
 chi2_1_cdf = Chi2(1).cdf
 
@@ -19,7 +29,7 @@ def slide_spectrum(counts, window_width):
     Returns
     -------
     spread_stack: array of shape (window_width-1, counts+window_width-1)
-    for a window_size of 3, counts=c, spreadstack would be
+    for a window_width of 3, counts=c, spreadstack would be
     [
     [nan , c[0], c[1], ... , c[-2]],
     # [c[0], c[1], c[2], ... , c[-1]],

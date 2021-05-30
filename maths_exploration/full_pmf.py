@@ -3,10 +3,14 @@ from numpy import cos, sin, pi, sqrt, exp, arccos;
 tau = 2*pi
 import numpy as np;
 from matplotlib import pyplot as plt
-from sqrt_repr import plot_sqrt
 import pandas as pd
 import sys, os
 from scipy.special import factorial as fac
+from peakfinidng.sqrt_repr import plot_sqrt
+
+"""
+Calculates the entire probability mass distribution function
+"""
 
 w = WINDOW_WIDTH = 4
 

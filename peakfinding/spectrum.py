@@ -62,6 +62,21 @@ class IECPeak:
     energy : float
     FWHM : float
 
+def check_file_exists(method_before_decoration):
+    """
+    Decorator to interact with the user already exists.
+    """
+    def method_after_decoration(self, *args, **kwargs):
+        print(self)
+        print(args)
+        print(kwargs)
+        if os.path.exists(args[0]):
+            print("File {} already exists!".format(file_path))
+            if input("Overwrite? (y/n)").lower()=="y":
+                return None
+        else:
+            return method_before_decoration(self, *args, **kwargs)
+
 class RealSpectrum(Histogram):
     def __init__(self, counts, boundaries, bound_units, live_time:float, **init_dict):
         """
@@ -266,6 +281,7 @@ class RealSpectrum(Histogram):
         spectra_created = [getattr(cls, "from_{}".format(fname.split(".")[-1]))(fname) for fname in filenames]
         return functools.reduce(add, spectra_created)
 
+    @check_file_exists
     def to_Spe(self, file_path, mimic_MAESTRO=True):
         """
         Documentation for the standards about the .Spe file is found here:
@@ -355,12 +371,14 @@ class RealSpectrum(Histogram):
                     else:
                         warnings.warn("Attribute {} is unexpected and thus is ignored.".format(k), RuntimeWarning)
 
+    @check_file_exists
     def to_csv(self, file_path):
         import pandas as pd
         df = pd.DataFrame(ary([self.counts, *self.boundaries.T]).T, columns=["lenergy", "uenergy", "count"])
         df.to_csv(file_path, index_label="channel")
         return
 
+    @check_file_exists
     def to_IEC(self, file_path):
         with open(file_path, "w") as f:
             # header
@@ -482,23 +500,43 @@ class RealSpectrumInteractive(RealSpectrum):
         'button', 'canvas', 'dblclick', 'guiEvent', 'inaxes', 'key', 'lastevent', 'name', 'step'
         """
         canvas = event.canvas
-        if canvas.manager.toolbar._active is None:
+        toolbar = canvas.manager.toolbar
+        # There are two versions of NavigationToolbar2,
+        # The latter version of which denotes cursor state as .mode="";
+        # And the former version of which denotes cursor state as ._active=None.
+        if hasattr(toolbar, "_active"):
+            is_cursor = toolbar._active is None
+            is_zoom_pan = toolbar._active in ("PAN", "ZOOM")
+        elif hasattr(toolbar, "mode"):
+            is_cursor = toolbar.mode == ""
+            is_zoom_pan = "zoom" in toolbar.mode
+
+        if is_cursor:
             if event.inaxes:
                 print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
                 self._clicked_and_dragged.append([event.xdata, event.ydata])
-        elif canvas.manager.toolbar._active in ("PAN", "ZOOM"):
+        elif is_zoom_pan:
             self._event_ax = event.inaxes
         return event
 
     def _on_release(self, event):
         ax = event.inaxes
         canvas = event.canvas
-        if canvas.manager.toolbar._active is None:
+        toolbar = canvas.manager.toolbar
+        if hasattr(toolbar, "_active"):
+            is_cursor = toolbar._active is None
+            is_zoom_pan = toolbar._active in ("PAN", "ZOOM")
+        elif hasattr(toolbar, "mode"):
+            is_cursor = toolbar.mode == ""
+            is_zoom_pan = "zoom" in toolbar.mode
+
+        if is_cursor:
             if (len(self._clicked_and_dragged)%2)==1: # odd number of entries in the _clicked_and_dragged list
                 print("released at x={}, y={}".format(event.xdata, event.ydata))
                 self._clicked_and_dragged.append([event.xdata, event.ydata])
             print()
-        elif canvas.manager.toolbar._active in ("PAN", "ZOOM"):
+        elif is_zoom_pan:
+            # If the click was started within the axes
             ylim = self._event_ax.get_ylim()
             ylim_range = np.diff(ylim)[0]
             yticks = np.linspace(ylim[0]+ylim_range*0.02, ylim[1]-ylim_range*0.02, 10)
