@@ -646,8 +646,8 @@ class RealSpectrumInteractive(RealSpectrum):
 
     def get_width_at(self, E):
         assert hasattr(self, "fwhm_cal"), "Must run one of the add_fwhm_cal* method first."
-        a, b = self.fwhm_cal
-        width_at_E = sqrt(a + b*E)
+        inside_sqrt_func = np.poly1d(self.fwhm_cal[::-1])
+        width_at_E = sqrt(inside_sqrt_func(E))
         return width_at_E
 
     def add_fwhm_cal_interactively(self, plot_scale="sqrt"):

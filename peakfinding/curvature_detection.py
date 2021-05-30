@@ -234,7 +234,7 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
 
         return ary(new_peak_indices)
 
-    def default_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.7):
+    def default_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.7, peakiness_function=np.nanmean):
         """
         Slower than faster_peak_identifier becdause both the curvatures and peakiness are calculted for the entire spectrum.
 
@@ -244,7 +244,7 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature, RealSpectrumLikelihood):
         curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
 
         print("Calculating likelihood of each peak containing not-noise...")
-        peakiness_bool_array = self.apply_threshold_on_full_peakiness(threshold=peakiness_threshold)
+        peakiness_bool_array = self.apply_threshold_on_full_peakiness(threshold=peakiness_threshold, function=peakiness_function)
 
         return self.bool_array_to_peak_indices(np.logical_and(curvature_bool_array, peakiness_bool_array))
 
