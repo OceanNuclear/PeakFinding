@@ -1,8 +1,7 @@
-from numpy import array as ary; from numpy import log as ln
-from numpy import cos, sin, pi, sqrt, exp, arccos;
-tau = 2*pi
+from numpy import array as ary, log as ln
+from numpy import sqrt
 import sys
-import numpy as np;
+import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
@@ -63,12 +62,3 @@ def plot_log(*args, ax=None):
     ax.set_ylabel("counts")
     ax.set_title("log plot of gamma spec")
     return ax, line
-
-if __name__=='__main__':
-    spectrum = pd.read_csv(sys.argv[1], index_col=[0])
-    boundaries = spectrum[["lenergy", "uenergy"]].to_numpy()
-    counts = spectrum["count"].to_numpy()
-    fig, (axtop, axbot) = plt.subplots(2, 1, sharex=True)
-    plot_sqrt(boundaries, counts, ax=axtop, rewrite_yticks=False)
-    plot_log(boundaries, counts, ax=axbot)
-    plt.show()

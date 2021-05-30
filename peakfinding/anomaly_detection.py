@@ -1,15 +1,18 @@
-from numpy import array as ary; from numpy import log as ln
-from numpy import cos, sin, pi, sqrt, exp, arccos;
-tau = 2*pi
-import numpy as np;
-from matplotlib import pyplot as plt
+from numpy import array as ary
 import numpy as np
-import pandas as pd
-import sys, os
 from tqdm import tqdm
 
-from sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
-from poisson_distribution import Poisson, Normal, Chi2
+from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
+from peakfinding.poisson_distribution import Poisson, Normal, Chi2
+
+"""
+For calculating the peakiness parameter of a window.
+For a given window of w bins, 
+the peakiness parameter is a scalar denoting the probability that window contains more than "samples drawn from same poisson distribution".
+i.e. if part of a peak is included in this window, then this probability value should go up,
+    because bins that forms the peak should each have (on average) a higher count than the poisson distribution that forms the background noise.
+    Therefore the program should be able to tell that it's unlikely to have such high negative log likelihood values for those bins.
+"""
 
 class SpectrumGoodnessOfFit():
     def __init__(self, counts, window_width):
@@ -97,60 +100,3 @@ class SpectrumGoodnessOfFit():
         full_sized_goodness_of_fit = self.get_self_contributed_goodness_of_fit()
         goodness_of_fit_sum = np.nanmean(full_sized_goodness_of_fit, axis=0) * self.window_width
         return self.chi2_cdf_converter.cdf(goodness_of_fit_sum)
-
-if __name__=='__main__':
-    import seaborn as sns
-    from math import floor
-    # from collections import defaultdict
-    REPLOT_XTICKS = False
-    
-    WINDOW_WIDTHS = range(4, 40)
-    spectrum = pd.read_csv(sys.argv[1], index_col=[0]).values.T
-    E_l, E_u, counts = spectrum
-    counts = ary(counts, dtype=int)
-    E_bound = ary([E_l, E_u]).T
-
-    mid_E = E_bound.mean(axis=1)
-
-    results_canonical, results_self_cont, GoF_collection = [], [], {}
-    for w in WINDOW_WIDTHS:
-        print(f"Checking for peak-iness using window size = {w}")
-        GoF = SpectrumGoodnessOfFit(counts, w)
-
-        GoF_collection[w] = GoF
-        results_canonical.append(np.insert([np.nan,]*(w-1), floor(w/2), GoF.get_canonical_peakiness()))
-        results_self_cont.append(GoF.get_self_contributed_peakiness())
-
-    fig, (ax_u, ax_m, ax_l) = plt.subplots(3, 1, sharex=True)
-
-    # upper plot
-    plot_sqrt(counts, ax=ax_u)
-    ax_u.set_xlabel("")
-    if REPLOT_XTICKS:
-        old_ticks = ax_u.get_xticks()
-        # fix the tick problem (as we can't plot the with the ticks)
-        new_ticks = []
-        for x in old_ticks:
-            new_ticks.append(str(mid_E[np.clip(int(x), 0, len(mid_E)-1)]))
-        ax_u.set_xticklabels(new_ticks)
-        ax_u.set_xlabel(r"$E_\gamma$ (eV)")
-
-    # lower plot
-    sns.heatmap(results_self_cont, yticklabels=WINDOW_WIDTHS, ax=ax_m, cbar=False, vmin=0.0, vmax=1.0)
-    ax_m.set_title("Likelihood of being a peak\nby self-contribution method")
-    ax_m.set_ylabel("Size of hypothesis window")
-
-    sns.heatmap(results_canonical, yticklabels=WINDOW_WIDTHS, ax=ax_l, cbar=False, vmin=0.0, vmax=1.0)
-    ax_l.set_title("Likelihood of being a peak\nby the canonical method")
-    ax_l.set_ylabel("Size of hypothesis window")
-
-    ax_l.set_xlabel(r"$E_\gamma$ (keV)")
-    plt.show()
-
-    # peakiness = np.nanmean(results_canonical, axis=0)
-    fig, (ax_u, ax_l) = plt.subplots(2, 1, sharex=True)
-    plot_sqrt(E_bound, counts, ax=ax_u)
-    ax_l.plot(E_bound.flatten(), np.repeat(np.nanmean(results_canonical, axis=0), 2), label="canonical mean")
-    ax_l.set_xlabel(r"$E_\gamma$ (keV)")
-    ax_l.set_ylabel("Probabilty of being NOT noise")
-    plt.show()

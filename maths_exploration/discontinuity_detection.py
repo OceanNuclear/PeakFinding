@@ -11,6 +11,7 @@ from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, r
 
 if __name__=='__main__':
     """
+    Failed idea:
     Using this script, we can see that the "taking derivative" or "smoothen, then take derivative" idea fails terribly
     """
 

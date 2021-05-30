@@ -3,7 +3,7 @@ from numpy import cos, sin, pi, sqrt, exp, arccos
 tau = 2*pi
 import numpy as np
 from matplotlib import pyplot as plt
-from poisson_distribution import Poisson, Normal
+from peakfinding.poisson_distribution import Poisson, Normal
 """
 This module is written about for comparing the
 - negative log likelihood of the normal distribution (chi^2)
@@ -12,10 +12,6 @@ against
 
 A video will be made to demonstrate the difference between the whether using the normal distribution likelihood function instead of the Poisson distribution function likelihood to calculate the NLE
 """
-
-def Poisson_NLL(samples, lamb):
-    poisson_NLL = samples
-    return
 
 EXPLICIT_COMPARISON = False
 

@@ -7,6 +7,12 @@ from matplotlib import pyplot as plt
 # fac = lambda a: ary([factorial(i) for i in a])
 from scipy.special import factorial as fac
 
+"""
+This module explores what happens when you do weighted average of multiple independently distributed poisson distribution,
+i.e. using applying a kernel on a series of neighbouring bins, all of whom follows the same poisson distribution.
+    The weighting factor = the kernel[i].
+"""
+
 def mean_variance(distribution_x, distribution_P):
     mean = (distribution_x * distribution_P).sum() # scalar
     variance = ((distribution_x - mean)**2 * distribution_P).sum() # method 1

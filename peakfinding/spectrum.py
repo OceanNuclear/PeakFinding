@@ -3,10 +3,9 @@ from numpy import pi, sqrt, exp, array as ary, log as ln
 tau = 2*pi
 from numpy import cos, sin, arccos
 from matplotlib import pyplot as plt
-import re
 import datetime as dt
-import warnings
-import functools
+import warnings, functools, os
+import re
 from operator import add as add
 from collections import OrderedDict
 from itertools import zip_longest
@@ -62,20 +61,17 @@ class IECPeak:
     energy : float
     FWHM : float
 
-def check_file_exists(method_before_decoration):
+def overwrite_protection(method_before_decoration):
     """
     Decorator to interact with the user already exists.
     """
     def method_after_decoration(self, *args, **kwargs):
-        print(self)
-        print(args)
-        print(kwargs)
         if os.path.exists(args[0]):
-            print("File {} already exists!".format(file_path))
-            if input("Overwrite? (y/n)").lower()=="y":
+            print("File {} already exists!".format(args[0]))
+            if input("Overwrite? (y/n)").lower()!="y":
                 return None
-        else:
-            return method_before_decoration(self, *args, **kwargs)
+        return method_before_decoration(self, *args, **kwargs)
+    return method_after_decoration
 
 class RealSpectrum(Histogram):
     def __init__(self, counts, boundaries, bound_units, live_time:float, **init_dict):
@@ -281,7 +277,7 @@ class RealSpectrum(Histogram):
         spectra_created = [getattr(cls, "from_{}".format(fname.split(".")[-1]))(fname) for fname in filenames]
         return functools.reduce(add, spectra_created)
 
-    @check_file_exists
+    @overwrite_protection
     def to_Spe(self, file_path, mimic_MAESTRO=True):
         """
         Documentation for the standards about the .Spe file is found here:
@@ -371,14 +367,14 @@ class RealSpectrum(Histogram):
                     else:
                         warnings.warn("Attribute {} is unexpected and thus is ignored.".format(k), RuntimeWarning)
 
-    @check_file_exists
+    @overwrite_protection
     def to_csv(self, file_path):
         import pandas as pd
         df = pd.DataFrame(ary([self.counts, *self.boundaries.T]).T, columns=["lenergy", "uenergy", "count"])
         df.to_csv(file_path, index_label="channel")
         return
 
-    @check_file_exists
+    @overwrite_protection
     def to_IEC(self, file_path):
         with open(file_path, "w") as f:
             # header
@@ -716,16 +712,3 @@ def _to_datetime(line):
     """
     month, day, year, hour, minute, second = regex_num(line, int)
     return dt.datetime(year, month, day, hour, minute, second)
-
-if __name__=='__main__':
-    import sys
-    print(*sys.argv[1:])
-    spectrum = RealSpectrumInteractive.from_multiple_files(*sys.argv[1:-1])
-    """
-    Note: inside ipython, the using * (wildcard) in sys.argv will give an UNSORTED (disorderd!) list of the files grepped by wildcard.
-    But outside of ipython sys.argv will give a sorted sys.argv.
-    Therefore you're encouraged to not use * in ipython.
-    """
-    spectrum.show_sqrt_scale()
-    # spectrum.add_fwhm_cal_interactively()
-    spectrum.to_Spe(sys.argv[-1])
