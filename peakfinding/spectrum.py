@@ -3,6 +3,7 @@ from numpy import pi, sqrt, exp, array as ary, log as ln
 tau = 2*pi
 from numpy import cos, sin, arccos
 from matplotlib import pyplot as plt
+from matplotlib import ticker
 import datetime as dt
 import warnings, functools, os
 import re
@@ -496,8 +497,8 @@ class RealSpectrumInteractive(RealSpectrum):
         # functionality specific to sqrt_scale
         self.fig = ax.figure
         ax.set_ylabel("counts")
-        yticks = ax.get_yticks()
-        yticks = round_to_nearest_sq_int(yticks)
+        yticks = round_to_nearest_sq_int(ax.get_yticks())
+        ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
         ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
 
         if callable(execute_before_showing): # if this is a function
