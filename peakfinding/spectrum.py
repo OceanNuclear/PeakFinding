@@ -7,7 +7,7 @@ import datetime as dt
 import warnings, functools, os
 import re
 from operator import add as add
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from itertools import zip_longest
 from dataclasses import dataclass
 
@@ -360,7 +360,7 @@ class RealSpectrum(Histogram):
                 elif not k.startswith("_"): # all other text information
                     if isinstance(v, list):
                         f.write(_format_Spe_key(k))
-                        f.write(" ".join(str(i) for i in v)+ "\n")
+                        f.write(" ".join(map(str, v))+ "\n")
                     elif isinstance(v, str):
                         f.write(_format_Spe_key(k))
                         f.write(v+ "\n")
@@ -442,7 +442,7 @@ def _format_Spe_key(key):
 
 def _format_Spe_CAL(coefficients):
     formatter_str = "{}\n{}"
-    return formatter_str.format(len(coefficients), " ".join(str(i) for i in coefficients))
+    return formatter_str.format(len(coefficients), " ".join(map(str, coefficients)))
 
 def _format_Spe_DATE(date):
     return date.strftime("%D %H:%M:%S\n")
@@ -452,100 +452,127 @@ class RealSpectrumInteractive(RealSpectrum):
         super().__init__(counts, boundaries, bound_units, live_time, **init_dict)
         self._clicked_and_dragged = []
 
-    def show_log_scale(self, title=None, **kwargs):
+    def show_log_scale(self, ax=None, execute_before_showing=None, **kwargs):
         """
-        Identical documentation as show_sqrt_scale
+        Parameters
+        ----------
+        ax : an optional matpotlib axes object to draw over
+        execute_before_showing : a function to execute before showing.
+                                must have no calls ignature of NO parameters.
+        Returns
+        -------
+        nothing, as this method only returns when we close the plot
         """
-        ax, line = super().plot_log_scale(ax=None, **kwargs)
-        if title:
-            ax.set_title(title)
-        self._setup_fig(ax.figure)
+        ax, line = super().plot_log_scale(ax=ax, **kwargs)
+
+        if callable(execute_before_showing): # if this is a function
+            execute_before_showing()
+        self._setup_fig(ax.figure, False)
         plt.show()
         self._teardown_fig()
         return
 
-    def show_sqrt_scale(self, title=None, **kwargs):
+    def show_sqrt_scale(self, ax=None, execute_before_showing=None, **kwargs):
         """
         Connect button clicks on the plot to other useful stuff.
         Parameters
         ----------
-        same as RealSpectrum.plot_sqrt_scale
+        ax : an optional matpotlib axes object to draw over
+        execute_before_showing : a function to execute before showing.
+                                must have no calls ignature of NO parameters.
+        an example execute_before_showing function is as follows:
+            def func():
+                ax.set_title("Some title")
+                ax.plot([-1, 1000], [0.9, 0.9])
+                return
 
         Returns
         -------
         nothing, as this method only returns when we close the plot.
         """
 
-        ax, line = super().plot_sqrt_scale(ax=None, rewrite_yticks=False, **kwargs)
+        ax, line = super().plot_sqrt_scale(ax=ax, rewrite_yticks=False, **kwargs)
+
+        # functionality specific to sqrt_scale
         self.fig = ax.figure
-        self._setup_fig(ax.figure)
         ax.set_ylabel("counts")
-        if title:
-            ax.set_title(title)
         yticks = ax.get_yticks()
         yticks = round_to_nearest_sq_int(yticks)
         ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
+
+        if callable(execute_before_showing): # if this is a function
+            execute_before_showing()        
+        self._setup_fig(ax.figure, True)
         plt.show()
         self._teardown_fig()
         return
 
     def _on_press(self, event):
         """
-        gets the information about a button press down event.
-        Other usable attributes about the events are:
-        'button', 'canvas', 'dblclick', 'guiEvent', 'inaxes', 'key', 'lastevent', 'name', 'step'
+        'event' contains information about the button press down event.
+            Other usable attributes about the events are:
+            'button', 'canvas', 'dblclick', 'guiEvent', 'inaxes', 'key', 'lastevent', 'name', 'step'
         """
         canvas = event.canvas
         toolbar = canvas.manager.toolbar
         # There are two versions of NavigationToolbar2,
-        # The latter version of which denotes cursor state as .mode="";
-        # And the former version of which denotes cursor state as ._active=None.
-        if hasattr(toolbar, "_active"):
-            is_cursor = toolbar._active is None
-            is_zoom_pan = toolbar._active in ("PAN", "ZOOM")
-        elif hasattr(toolbar, "mode"):
-            is_cursor = toolbar.mode == ""
-            is_zoom_pan = "zoom" in toolbar.mode
+        # The latter version of which       denotes cursor state as toolbar.mode="";
+        # while the former version of which denotes cursor state as toolbar._active=None.
+        is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
 
         if is_cursor:
             if event.inaxes:
+                # print and store the within-bound clicks
                 print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
                 self._clicked_and_dragged.append([event.xdata, event.ydata])
         elif is_zoom_pan:
+            # store the axis where the press-down event happened
             self._event_ax = event.inaxes
         return event
 
-    def _on_release(self, event):
-        ax = event.inaxes
-        canvas = event.canvas
-        toolbar = canvas.manager.toolbar
-        if hasattr(toolbar, "_active"):
-            is_cursor = toolbar._active is None
-            is_zoom_pan = toolbar._active in ("PAN", "ZOOM")
-        elif hasattr(toolbar, "mode"):
-            is_cursor = toolbar.mode == ""
-            is_zoom_pan = "zoom" in toolbar.mode
+    def _on_release_callback_function_generator(self, sqrt_scale):
+        """
+        Function factory, creates an _on_release function which is complementary to _on_press.
+        """
+        def _on_release(event):
+            """
+            Rewrite y-axis upon self.event if it's a zoom/pan event.
+            Minor issue may arise if the user decides to begin the click from within bounds, 
+                but then release the click from out-of-bounds.
+                This means a [None, None] will be recorded as the location of the release event,
+                which will get translated into float(nan).
+                This will lead to the function being unable to fit the values.
+            """
+            ax = event.inaxes
+            canvas = event.canvas
+            toolbar = canvas.manager.toolbar
+            is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
 
-        if is_cursor:
-            if (len(self._clicked_and_dragged)%2)==1: # odd number of entries in the _clicked_and_dragged list
-                print("released at x={}, y={}".format(event.xdata, event.ydata))
-                self._clicked_and_dragged.append([event.xdata, event.ydata])
-            print()
-        elif is_zoom_pan:
-            # If the click was started within the axes
-            ylim = self._event_ax.get_ylim()
-            ylim_range = np.diff(ylim)[0]
-            yticks = np.linspace(ylim[0]+ylim_range*0.02, ylim[1]-ylim_range*0.02, 10)
-            yticks = round_to_nearest_sq_int(yticks)
-            self._event_ax.set_yticks(yticks)
-            self._event_ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
-            delattr(self, "_event_ax")
-        return event
+            if is_cursor:
+                if (len(self._clicked_and_dragged)%2)==1:
+                    # odd number of entries in the _clicked_and_dragged list means the press-down event for the same button click happened within bounds.
+                    print("released at x={}, y={}".format(event.xdata, event.ydata))
+                    self._clicked_and_dragged.append([event.xdata, event.ydata])
+                print() # print an empty line to signal to the user that the click has finished and is detected, even if it's not within bounds.
+            elif is_zoom_pan:
+                # If the click was started within the axes
+                if sqrt_scale:
+                    # calculate the y-ticks location and un-sqrt their values.
+                    ylim = self._event_ax.get_ylim()
+                    ylim_range = np.diff(ylim)[0]
+                    yticks = np.linspace(ylim[0]+ylim_range*0.02, ylim[1]-ylim_range*0.02, 10)
+                    yticks = round_to_nearest_sq_int(yticks)
+                    self._event_ax.set_yticks(yticks)
+                    self._event_ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
+                delattr(self, "_event_ax")
+            return event
+        return _on_release
 
-    def _setup_fig(self, fig):
+    def _setup_fig(self, fig, sqrt_scale=False):
         self.fig = fig
         self.on_press_connection = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
-        self.on_release_connection = self.fig.canvas.mpl_connect("button_release_event", self._on_release)
+        _on_release = self._on_release_callback_function_generator(sqrt_scale)
+        self.on_release_connection = self.fig.canvas.mpl_connect("button_release_event", _on_release)
 
     def _teardown_fig(self):
         self.fig.canvas.mpl_disconnect(self.on_press_connection)
@@ -606,25 +633,27 @@ class RealSpectrumInteractive(RealSpectrum):
         fwhm_coefficient : [A, B] in the equation above.
         """
         E1 = (peak_min1 + peak_max1)/2 # centroid energy for peak 1
-        w1 = peak_max1 - peak_min1 # width of peak 1
+        w1 = abs(peak_max1 - peak_min1) # width of peak 1
         if len(peak2_minmax)==0:
-            print("1 peak was clicked. Fully-determined fitting 1 DoF (FWHM=sqrt(B*E))...")
+            print("1 peak was located. Fully-determined fitting 1 DoF (FWHM=sqrt(B*E))...")
             # assume A = 0,
             fwhm_coeff_2 = w1**2/E1
             # B = FWHM^2/B
             fwhm_coeffs = ary([0, fwhm_coeff_2]) # A is assumed zero by default
         elif len(peak2_minmax)==2:
-            print("2 peak were clicked. Fully-determined fitting 2 DoF (FWHM=sqrt(A+B*E))...")
+            print("2 peak were located. Fully-determined fitting 2 DoF (FWHM=sqrt(A+B*E))...")
             peak_min2, peak_max2 = peak2_minmax
             E2 = (peak_min2 + peak_max2)/2 # centroid 2
-            w2 = peak_max2 - peak_min2 # width 2
+            w2 = abs(peak_max2 - peak_min2) # width 2
             # solve by FWHM **2 = A + B*E:
             fwhm_coeffs = (np.linalg.inv([[1, E1], [1, E2]]) @ ary([w1**2, w2**2]))
             # matrix inversion to find solution to  simultaneous equation
         else:
-            print("3+ peak were clicked. Over-determined fitting 1 DoF (FWHM=sqrt(A+B*E))...")
+            print("3+ peak were located. Over-determined fitting 1 DoF (FWHM=sqrt(A+B*E))...")
             # Use more than 2 data point to perform 2 degrees of freedom fitting.
             # i.e. overdetermined fitting.
+
+            # assert statement
             template = "\nleft-edge x value of peak {num}, right edge x of peak {num}, "
             explanation = template.format(num=1)+ template.format(num=2)
             assert len(peak2_minmax)%2==0, "Must enter peak limits in pairs:({}\netc.)".format(explanation.format())
@@ -634,7 +663,7 @@ class RealSpectrumInteractive(RealSpectrum):
             peak_limits = peak_limits.reshape([-1, 2])
 
             # get the w vector and E vector, both of which are 1D
-            w = peak_limits[:, 1] - peak_limits[:, 0]
+            w = abs(peak_limits[:, 1] - peak_limits[:, 0])
             E = peak_limits.mean(axis=1)
 
             # perform pseudo-inversion
@@ -659,20 +688,26 @@ class RealSpectrumInteractive(RealSpectrum):
         ---------
         scale: scale to show the spectrum plot in. Options are: "sqrt" (default), "log".
         """
-        print("Click and drag across the peak(s) (left to right) that you'd like to fit;")
+        print("Click and drag across the peak(s) that you'd like to fit;")
         print("Only the last two click-and-dragged peaks will be used as the data.")
         while True:
             self._clicked_and_dragged = [] # clear the list
             print("\nPlease click and drag across at least one peak:")
-            getattr(self, "show_{}_scale".format(plot_scale))(title="Drag cursor across 1 or 2 peaks (left to right)")
-            last_four_x = ary(self._clicked_and_dragged, dtype=float).reshape([-1,2])[:, 0]
-            if np.isfinite(last_four_x).sum()<2:
-                print("Not enough peaks selected! Please try again:")
+            ax = plt.subplot()
+            ax.set_title("Drag cursor across 1 or 2 peaks (left to right)")
+            getattr(self, "show_{}_scale".format(plot_scale))(ax=ax)
+            x_coordinates = ary(self._clicked_and_dragged, dtype=float).reshape([-1,2])[:, 0] # select the x coordinates
+            mouse_press_down_up_pair = x_coordinates.reshape([-1, 2])
+            valid_x_coords = mouse_press_down_up_pair[np.isfinite(mouse_press_down_up_pair).all(axis=1)]
+            
+            # isfinite handle the cases that we don't have enough
+            if len(valid_x_coords)==0:
+                print("Not enough/invalid peaks selected! Please try again:")
             else:
                 break # exit the loop
 
-        self.add_fwhm_cal( *last_four_x )
-        print("FWHM coefficients are found as", ", ".join(str(i) for i in self.fwhm_cal))
+        self.add_fwhm_cal( *valid_x_coords.flatten() )
+        print("FWHM coefficients are found as", ", ".join(map(str, self.fwhm_cal)))
 
     def get_windows(self):
         """
@@ -694,6 +729,18 @@ class RealSpectrumInteractive(RealSpectrum):
             window = np.logical_and(above_lower_lim, below_upper_lim)
             windows.append(window)
         return ary(windows)
+
+mpl_active_tool = namedtuple("mpl_active_tool", ("is_cursor", "is_zoom_pan"))
+def check_matplotlib_toolbar_tool_used(toolbar):
+    if hasattr(toolbar, "_active"):
+        is_cursor = toolbar._active is None
+        is_zoom_pan = toolbar._active in ("PAN", "ZOOM")
+    elif hasattr(toolbar, "mode"):
+        is_cursor = toolbar.mode == ""
+        is_zoom_pan = "zoom" in toolbar.mode
+    # should only raise an error if check_matplotlib_toolbar_tool_used() is broken.
+    assert (int(is_cursor) + int(is_zoom_pan)) == 1, "Expected the tool to either be cursor, pan, or zoom."
+    return mpl_active_tool(is_cursor, is_zoom_pan)
 
 def round_to_nearest_sq_int(yticks):
     rounded_values = np.round(yticks).astype(int)
