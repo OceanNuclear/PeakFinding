@@ -4,6 +4,9 @@ from peakfinding.spectrum import RealSpectrumInteractive
 from peakfinding.poisson_distribution import Chi2, Poisson
 from tqdm import tqdm
 
+__all__ = ["RealSpectrumCurvature", "threshold_curve_function_generator",
+            "RealSpectrumLikelihood", "RealSpectrumPeakFinder" ]
+
 class RealSpectrumCurvature(RealSpectrumInteractive):
     """
     self.calculate_sqrt_curvature doesn't take much time.
@@ -41,6 +44,8 @@ class RealSpectrumCurvature(RealSpectrumInteractive):
                 probability_of_having_such_chi2_or_less.append(cdf_value)
 
         return ary(curvature_coef), ary(chi2_values), ary(probability_of_having_such_chi2_or_less)
+
+    # def get_sqrt curvature # get the other two coefficients too!
 
     def calculate_sqrt_curvature(self):
         """

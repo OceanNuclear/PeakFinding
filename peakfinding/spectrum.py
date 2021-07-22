@@ -1,16 +1,17 @@
-import numpy as np
-from numpy import pi, sqrt, exp, array as ary, log as ln
-tau = 2*pi
-from numpy import cos, sin, arccos
-from matplotlib import pyplot as plt
-from matplotlib import ticker
 import datetime as dt
 import warnings, functools, os
-import re
-from operator import add as add
+from functools import reduce
+from operator import add as __add__
 from collections import OrderedDict, namedtuple
 from itertools import zip_longest
 from dataclasses import dataclass
+
+import numpy as np
+from numpy import array as ary
+from matplotlib import pyplot as plt
+from matplotlib import ticker as ticker
+
+__all__ = ["Histogram", "TimeSeries", "IECPeak", "RealSpectrum", "RealSpectrumInteractive"]
 
 class Histogram():
     """
@@ -37,7 +38,7 @@ class Histogram():
     def plot_sqrt_scale(self, ax=None, rewrite_yticks=False, **kwargs):
         if not ax:
             ax = plt.subplot()
-        transformed_cnts = sqrt(self.counts)
+        transformed_cnts = np.sqrt(self.counts)
         line, = ax.plot(self.boundaries.flatten(), np.repeat(transformed_cnts, 2), **kwargs)
         ax.set_xlabel(self.bound_units)
         # y labelling
@@ -276,7 +277,7 @@ class RealSpectrum(Histogram):
         e.g. RealSpectrum.from_multiple_files("spectrum1.csv", "spectrum2.csv", "spectrum3.IEC")
         """
         spectra_created = [getattr(cls, "from_{}".format(fname.split(".")[-1]))(fname) for fname in filenames]
-        return functools.reduce(add, spectra_created)
+        return reduce(__add__, spectra_created)
 
     @overwrite_protection
     def to_Spe(self, file_path, mimic_MAESTRO=True):
@@ -677,7 +678,7 @@ class RealSpectrumInteractive(RealSpectrum):
     def get_width_at(self, E):
         assert hasattr(self, "fwhm_cal"), "Must run one of the add_fwhm_cal* method first."
         inside_sqrt_func = np.poly1d(self.fwhm_cal[::-1])
-        width_at_E = sqrt(inside_sqrt_func(E))
+        width_at_E = np.sqrt(inside_sqrt_func(E))
         return width_at_E
 
     def add_fwhm_cal_interactively(self, plot_scale="sqrt"):
@@ -749,9 +750,10 @@ def round_to_nearest_sq_int(yticks):
     sq_values = np.sign(yticks)*(yticks)**2
     sq_rounded_values = np.round(sq_values)
     sq_rounded_values_no_repeat = ary(sorted(set(sq_rounded_values)))
-    return np.sign(sq_rounded_values_no_repeat) * sqrt(abs(sq_rounded_values_no_repeat))
+    return np.sign(sq_rounded_values_no_repeat) * np.sqrt(abs(sq_rounded_values_no_repeat))
 
 def regex_num(line, dtype=int):
+    import re
     return [dtype(i) for i in re.findall(r"[\w]+", line)]
 
 def _to_datetime(line):

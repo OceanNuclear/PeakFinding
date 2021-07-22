@@ -1,9 +1,8 @@
-from numpy import array as ary, log as ln
-from numpy import sqrt
-import sys
+from numpy import array as ary
 import numpy as np
-import pandas as pd
 from matplotlib import pyplot as plt
+
+__all__ = ["plot_sqrt", "plot_log"]
 
 """This is the question I want to be asking: why aren't we using the sqrt y style of plotting???"""
 
@@ -31,7 +30,7 @@ def plot_sqrt(*args, ax=None, rewrite_yticks=False):
         counts = args[0]
         boundary_2d = ary([np.arange(0, len(counts)), np.arange(1,len(counts)+1)]).T
         ax.set_xlabel("bins")
-    transformed_cnts = sqrt(counts)
+    transformed_cnts = np.sqrt(counts)
     line, = ax.plot(boundary_2d.flatten(), np.repeat(transformed_cnts, 2))
     ax.set_ylabel("sqrt (counts)")
     if rewrite_yticks:

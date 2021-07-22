@@ -4,6 +4,7 @@ from tqdm import tqdm
 
 from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
 from peakfinding.poisson_distribution import Poisson, Normal, Chi2
+__all__ = ["SpectrumGoodnessOfFit"]
 
 """
 For calculating the peakiness parameter of a window.
