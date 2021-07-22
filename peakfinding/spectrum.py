@@ -383,8 +383,8 @@ class RealSpectrum(Histogram):
             f.write(_format_IEC_line("     peakfinding   1   1     0"))
             # live, real time and number of channels
             f.write(_format_IEC_line("{:14}{:14}{:6}".format(
-                self.__dict__.get("wall_time", np.nan),
                 self.__dict__.get("live_time", np.nan),
+                self.__dict__.get("wall_time", np.nan),
                 len(self.counts)
                 ))
             )
@@ -447,7 +447,7 @@ def _format_Spe_CAL(coefficients):
     return formatter_str.format(len(coefficients), " ".join(map(str, coefficients)))
 
 def _format_Spe_DATE(date):
-    return date.strftime("%D %H:%M:%S\n")
+    return date.strftime("%m/%d/%Y %H:%M:%S\n")
 
 class RealSpectrumInteractive(RealSpectrum):
     def __init__(self, counts, boundaries, bound_units, live_time, **init_dict):
@@ -761,4 +761,4 @@ def _to_datetime(line):
     Convert .Spe file line metadata into date-time data.
     """
     month, day, year, hour, minute, second = regex_num(line, int)
-    return dt.datetime(year, month, day, hour, minute, second)
+    return dt.datetime.strptime(line, "%m/%d/%Y %H:%M:%S")
