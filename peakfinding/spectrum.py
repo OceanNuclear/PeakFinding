@@ -643,7 +643,7 @@ class RealSpectrumInteractive(RealSpectrum):
             print("2 peak were located. Fully-determined fitting 2 DoF (FWHM=sqrt(A+B*E))...")
 
         elif len(other_peaks_minmax)//2>=2:
-            print("3+ peaks were located. Over-determined fitting 1 DoF (FWHM=sqrt(A+B*E))...")
+            print("3+ peaks were located. Over-determined fitting 2 DoF (FWHM=sqrt(A+B*E))...")
 
         template = "\nleft-edge x value of peak {num}, right edge x of peak {num}, "
         explanation = template.format(num=1)+ template.format(num=2)
