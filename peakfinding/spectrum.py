@@ -590,10 +590,8 @@ class RealSpectrumInteractive(RealSpectrum):
             except:
                 pass
 
-    def add_fwhm_cal(self, peak_min1, peak_max1, *peak2_minmax):
+    def add_fwhm_cal(self, peak_min1, peak_max1, *other_peaks_minmax):
         """
-        MAKE SURE YOUR PEAK
-
         Given min-max energies of ONE or TWO peaks, generate the FWHM curve's coefficients
         Resolution curve equation:
         FWHM = Full width half-maximum = FWHM_overall
@@ -630,51 +628,35 @@ class RealSpectrumInteractive(RealSpectrum):
         ---------
         peak_min1: left side of the first peak
         peak_min2: right side of the first peak
-        peak2_minmax: if provided, expands to the left and right sides of the second (or more) peak(s).
+        other_peaks_minmax: if provided, expands to the left and right sides of the second (or more) peak(s).
 
         Returns
         -------
         fwhm_coefficient : [A, B] in the equation above.
         """
-        E1 = (peak_min1 + peak_max1)/2 # centroid energy for peak 1
-        w1 = abs(peak_max1 - peak_min1) # width of peak 1
-        if len(peak2_minmax)==0:
+        if len(other_peaks_minmax)//2==0:
             print("1 peak was located. Fully-determined fitting 1 DoF (FWHM=sqrt(B*E))...")
-            # assume A = 0,
-            fwhm_coeff_2 = w1**2/E1
-            # B = FWHM^2/B
-            fwhm_coeffs = ary([0, fwhm_coeff_2]) # A is assumed zero by default
-        elif len(peak2_minmax)==2:
+            # assume A = 0, by inserting the origin (E=0, FWHM=0) as the only other calibration point.
+            other_peaks_minmax = (0, 0)
+
+        elif len(other_peaks_minmax)//2==1:
             print("2 peak were located. Fully-determined fitting 2 DoF (FWHM=sqrt(A+B*E))...")
-            peak_min2, peak_max2 = peak2_minmax
-            E2 = (peak_min2 + peak_max2)/2 # centroid 2
-            w2 = abs(peak_max2 - peak_min2) # width 2
-            # solve by FWHM **2 = A + B*E:
-            fwhm_coeffs = (np.linalg.inv([[1, E1], [1, E2]]) @ ary([w1**2, w2**2]))
-            # matrix inversion to find solution to  simultaneous equation
-        else:
-            print("3+ peak were located. Over-determined fitting 1 DoF (FWHM=sqrt(A+B*E))...")
-            # Use more than 2 data point to perform 2 degrees of freedom fitting.
-            # i.e. overdetermined fitting.
 
-            # assert statement
-            template = "\nleft-edge x value of peak {num}, right edge x of peak {num}, "
-            explanation = template.format(num=1)+ template.format(num=2)
-            assert len(peak2_minmax)%2==0, "Must enter peak limits in pairs:({}\netc.)".format(explanation.format())
+        elif len(other_peaks_minmax)//2>=2:
+            print("3+ peaks were located. Over-determined fitting 1 DoF (FWHM=sqrt(A+B*E))...")
 
-            # get the peak_limits array, shape it into (-1, 2)
-            peak_limits = np.insert(peak2_minmax, 0, [peak_min1, peak_max1])
-            peak_limits = peak_limits.reshape([-1, 2])
+        template = "\nleft-edge x value of peak {num}, right edge x of peak {num}, "
+        explanation = template.format(num=1)+ template.format(num=2)
+        assert len(other_peaks_minmax)%2==0, "Must enter peak limits in pairs:({}\netc.)".format(explanation.format())
 
-            # get the w vector and E vector, both of which are 1D
-            w = abs(peak_limits[:, 1] - peak_limits[:, 0])
-            E = peak_limits.mean(axis=1)
+        # get the peak_limits array, shape it into (-1, 2)
+        peak_limits = np.insert(other_peaks_minmax, 0, [peak_min1, peak_max1])
+        peak_limits = peak_limits.reshape([-1, 2])
+        w = abs(peak_limits[:, 1] - peak_limits[:, 0])
+        E = peak_limits.mean(axis=1)
 
-            # perform pseudo-inversion
-            invertible_matrix = ary([np.ones(len(E)), E]).T
-            fwhm_coeffs = np.linalg.pinv(invertible_matrix) @ w**2
-
-        self.fwhm_cal = fwhm_coeffs
+        fwhm_coeffs = np.polyfit(E, w**2, 1)
+        self.fwhm_cal = fwhm_coeffs[::-1]
         return self.fwhm_cal
 
     def get_width_at(self, E):
