@@ -592,6 +592,8 @@ class RealSpectrumInteractive(RealSpectrum):
 
     def add_fwhm_cal(self, peak_min1, peak_max1, *peak2_minmax):
         """
+        MAKE SURE YOUR PEAK
+
         Given min-max energies of ONE or TWO peaks, generate the FWHM curve's coefficients
         Resolution curve equation:
         FWHM = Full width half-maximum = FWHM_overall
@@ -670,7 +672,7 @@ class RealSpectrumInteractive(RealSpectrum):
 
             # perform pseudo-inversion
             invertible_matrix = ary([np.ones(len(E)), E]).T
-            fwhm_coeffs = np.linalg.pinv(invertible_matrix) @ w
+            fwhm_coeffs = np.linalg.pinv(invertible_matrix) @ w**2
 
         self.fwhm_cal = fwhm_coeffs
         return self.fwhm_cal
