@@ -1,4 +1,6 @@
 from peakfinding.curvature_detection import *
+from numpy import array as ary
+import numpy as np
 import sys
 import matplotlib.pyplot as plt
 
