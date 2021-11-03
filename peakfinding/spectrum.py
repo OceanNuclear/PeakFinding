@@ -141,7 +141,7 @@ class RealSpectrum(Histogram):
     @classmethod
     def from_IEC(cls, file_path, read_calibration_equation=True):
         """
-        Largely taken and adapted from Steve Bradnam's ADRIANA toolbox utility.
+        Largely taken and adapted from UKAEA Steve Bradnam's ADRIANA toolbox utility (private communications)
         Credits to him.
         I can't find the documentations for .IEC spectra file format standard in a reasonable time on Google.
         I give up and just followed the code

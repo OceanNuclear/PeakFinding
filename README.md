@@ -16,7 +16,7 @@ One of the primary aims of visualizing your data is to identify where the peaks 
 I argue the use of a sqrt-count as the y-axis is more useful than log-count as the y-axis or (linear-)count as y-axis.
 
 ### The Poisson distribution justification
-**The count in each bin should follow a Poisson distribution.** And if neighbouring bins follows similar poisson distribution, the amount of noisy jitter (which shows up on the spectrum as a fuzz-band) in the background will be proportional to √(counts).
+**The count in each bin should follow a Poisson distribution.** And if neighbouring bins follows similar poisson distribution, the amount of noisy jitter (which shows up on the spectrum as, what I call a fuzz-band) in the background will be proportional to √(counts).
 
 Therefore plotting sqrt-count as the y value will give us a histogram with fuzz-band of **constant** width.
 
