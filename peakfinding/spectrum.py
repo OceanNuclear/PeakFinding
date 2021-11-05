@@ -65,7 +65,7 @@ class IECPeak:
 
 def overwrite_protection(method_before_decoration):
     """
-    Decorator to interact with the user already exists.
+    Decorator to interact with the user if file already exists.
     """
     def method_after_decoration(self, *args, **kwargs):
         if os.path.exists(args[0]):
