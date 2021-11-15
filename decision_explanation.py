@@ -8,14 +8,20 @@ DEMONSTRATE_DECISION_MAKING = True
 
 spectrum = RealSpectrumPeakFinder.from_multiple_files(*sys.argv[1:])
 spectrum.show_sqrt_scale()
-print("Type in the calibration coefficients (comma separated) ; or press enter to fit the peaks manually.")
+print("Type in the calibration coefficients (comma separated); Infer the calibration coefficients from the metadata ('infer'); or press enter to fit the peaks manually.")
 values = input()
 if values.strip()=="":
-    spectrum.add_fwhm_cal_interactively()
+    spectrum.fit_fwhm_cal_interactively()
+elif values=="infer":
+    fwhm_preferences = ("shape_cal", "mca_cal")
+    for fwhm_attr in :
+        if hasattr(spectrum, fwhm_attr):
+            spectrum.fwhm_cal = getattr(spectrum, fwhm_attr)
+            break
+    else:
+        raise NameError("File(s) have no corresponding metadata:\n"+str(fwhm_preferences))
 else:
     spectrum.fwhm_cal = ary([float(i) for i in values.split(",")])
-
-# spectrum.fwhm_cal = ary([1.70101954, 0.02742255])
 
 import inspect
 if DEMONSTRATE_DECISION_MAKING:

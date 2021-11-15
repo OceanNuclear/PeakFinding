@@ -590,7 +590,7 @@ class RealSpectrumInteractive(RealSpectrum):
             except:
                 pass
 
-    def add_fwhm_cal(self, peak_min1, peak_max1, *other_peaks_minmax):
+    def fit_fwhm_cal(self, peak_min1, peak_max1, *other_peaks_minmax):
         """
         Given min-max energies of ONE or TWO peaks, generate the FWHM curve's coefficients
         Resolution curve equation:
@@ -660,12 +660,12 @@ class RealSpectrumInteractive(RealSpectrum):
         return self.fwhm_cal
 
     def get_width_at(self, E):
-        assert hasattr(self, "fwhm_cal"), "Must run one of the add_fwhm_cal* method first."
+        assert hasattr(self, "fwhm_cal"), "Must run one of the fit_fwhm_cal* method first."
         inside_sqrt_func = np.poly1d(self.fwhm_cal[::-1])
         width_at_E = np.sqrt(inside_sqrt_func(E))
         return width_at_E
 
-    def add_fwhm_cal_interactively(self, plot_scale="sqrt"):
+    def fit_fwhm_cal_interactively(self, plot_scale="sqrt"):
         """
         Plot the spectrum on a matplotlib figure, on which the user can click and drag to define one or two peaks.
         If >2 clicks were detected, then only the last two will made.
@@ -692,7 +692,7 @@ class RealSpectrumInteractive(RealSpectrum):
             else:
                 break # exit the loop
 
-        self.add_fwhm_cal( *valid_x_coords.flatten() )
+        self.fit_fwhm_cal( *valid_x_coords.flatten() )
         print("FWHM coefficients are found as", ", ".join(map(str, self.fwhm_cal)))
 
     def get_windows(self):
@@ -704,7 +704,7 @@ class RealSpectrumInteractive(RealSpectrum):
         -------
         a mask of shape [len(self.counts), len(self.counts)]
         """
-        assert hasattr(self, "fwhm_cal"), "Must run one of the add_fwhm_cal* method first before we can calculate the window sizes."
+        assert hasattr(self, "fwhm_cal"), "Must run one of the fit_fwhm_cal* method first before we can calculate the window sizes."
         E_mid = self.boundaries.mean(axis=1)
 
         windows = []

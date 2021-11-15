@@ -12,7 +12,7 @@ print("Type in the calibration coefficients (comma separated) ; or press enter t
 values = input()
 spectrum.fwhm_cal = ary([1.5853449048830446, 0.0020776090022188573])
 # if values.strip()=="":
-#     spectrum.add_fwhm_cal_interactively()
+#     spectrum.fit_fwhm_cal_interactively()
 # else:
 #     spectrum.fwhm_cal = ary([float(i) for i in values.split(",")])
 

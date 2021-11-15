@@ -7,7 +7,7 @@ spectrum.show_sqrt_scale()
 print("Type in the calibration coefficients (comma separated) ; or press enter to fit the peaks manually.")
 values = input()
 if values.strip()=="":
-    spectrum.add_fwhm_cal_interactively()
+    spectrum.fit_fwhm_cal_interactively()
 else:
     spectrum.fwhm_cal = ary([float(i) for i in values.split(",")])
 
