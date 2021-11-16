@@ -10,10 +10,8 @@ __all__ = ["RealSpectrumCurvature",
             "threshold_curve_function_generator",
             "RealSpectrumLikelihoodSimple",
             "RealSpectrumLikelihoodWithNoiseFlooring",
-            # "RealSpectrumLikelihoodDuplicatePeakiness",
             "RealSpectrumPeakFinder",
             "RealSpectrumPeakFinderFromNoiseFloor",
-            # "RealSpectrumPeakFinderDuplicatePeakiness",
             ]
 
 def _first_n_notnan_val_of_array(array, n):
@@ -30,11 +28,12 @@ def _bool_array_to_peak_indices(bool_array):
     array of shape (N,2) indicating start and end of N peaks.
     """
     # turn boolean array (obtained by applying the threshold) into index pairs indicating the start and end of peaks.
-    bool_array = np.insert(bool_array, 0, False) # extend it by 1 so that you know there wasn't a peak at T=0
+    bool_array = ary([False]+list(bool_array)+[False], dtype=bool)
+    # wrap it with False's so even if it starts/ends with True it'll be properly recorded
     peak_start_stops = np.diff(bool_array.astype(int))
     peak_ledge_indices = np.argwhere(peak_start_stops==1).flatten()
     peak_redge_indices = np.argwhere(peak_start_stops==-1).flatten()
-
+    
     return ary([peak_ledge_indices, peak_redge_indices]).T
 
 class RealSpectrumCurvature(RealSpectrumInteractive):
@@ -183,32 +182,8 @@ class RealSpectrumLikelihoodSimple(RealSpectrumInteractive):
             self.peakiness = ary(peakiness)
         return self.peakiness
 
-class RealSpectrumLikelihoodDuplicatePeakiness(RealSpectrumLikelihoodSimple):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        raise DeprecationWarning(f"This class ({self.__class__}) has been deemed less promising in its peak identification abilities. Use at own risk.")
-
-    def get_full_sized_peakiness(self):
-        """
-        Spread out the peakiness value of each window across the entire window,
-        rather than assigning it to the window itself.
-
-        """
-        windows = self.get_windows()
-        peakiness = (windows.astype(float).T * self.get_peakiness(1.0)).T
-        return np.where(windows, peakiness, np.nan)
-
-    def apply_function_on_full_peakiness(self, function):
-        """Taking nanmean, nanmean, nanmax along axis=1 yields different versions of the peakiness values."""
-        peakiness_matrix = self.get_full_sized_peakiness()
-        return function(peakiness_matrix, axis=0)
-
-    def apply_threshold_on_full_peakiness(self, threshold=0.9, function=np.nanmean):
-        function_output = self.apply_function_on_full_peakiness(function)
-        return function_output >= threshold
-
 class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
-    def determine_noise_floor(self, max_pvalue=0.5):
+    def determine_noise_floor(self, max_pvalue=0.5, decay_rate=0.5):
         """
         Determine 
         Output
@@ -217,35 +192,40 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         self.raw_noise_floor :
         self.noise_floor : the noise
         """
+        L = len(self.counts)
         if not hasattr(self, "raw_noise_floor"):
-            # print("Finding the raw noise floor...")
+            # print("Finding the raw_noise_floor values...")
             is_noise = self.get_peakiness(window_size_multiplier=1.0) <= max_pvalue
             peaks_replaced_by_nans = np.where(is_noise, self.counts, np.nan)
             self.raw_noise_floor = peaks_replaced_by_nans
+        """
+        # Find all the local minima.
+        # Accept the local minima as a replacement for the noise
+        #   if it's close enough to the interpolated noise value there.
+        """
+        print("Calculating the final noise_floor...")
+        raw_noise_values = np.broadcast_to(self.raw_noise_floor, (L, L))
+        valid_positions = np.isfinite(raw_noise_values) # record the positions of NOT nans
 
-        # noise_window = self.get_windows(width_multiplier=3.0)
-        # raw_noise_values = np.where(noise_window, self.raw_noise_floor, np.nan)
-        # counts_values = np.where(self.get_windows(width_multiplier=1.0), self.counts, np.nan)
+        # by weighted average
+        weight_vec = np.empty(2*L-1)
+        weight_vec[L-1:2*L-1] = np.exp(-decay_rate * np.arange(L))
+        weight_vec[0:L] = np.exp(-decay_rate * np.arange(L))[::-1]
 
-        # with warnings.catch_warnings():
-        #     warnings.simplefilter("ignore", category=RuntimeWarning)
-        #     approved_noise = np.nanmean(raw_noise_values, axis=1)
-        #     min_counts = np.nanmin(counts_values, axis=1)
+        weight_matrix = [weight_vec[L-1-i:2*L-1-i] for i in range(L)]
 
-        if not hasattr(self, "noise_floor"):
-            # refine this noise floor so that no nans are left
-            print("Refining the noise floor values...")
-            noise_window = self.get_windows(width_multiplier=1.0)
+        final_w = np.where(valid_positions, weight_matrix, np.nan)
+        final_w_sum = np.nansum(final_w, axis=1)
 
-            background_noise_level = []
-            for peak_bins in tqdm(noise_window):
-                left_index, right_index = np.argwhere(peak_bins)[[0,-1], 0]
-                left_side, right_side = self.raw_noise_floor[:left_index], self.raw_noise_floor[right_index+1:] # find the end point
-                backgrounds = np.hstack([_first_n_notnan_val_of_array(left_side[::-1], peak_bins.sum()),
-                                        _first_n_notnan_val_of_array(right_side, peak_bins.sum())])
-                # test to make sure that there's not a significant overestimation of the background:
-                background_noise_level.append(backgrounds.mean())
-            self.noise_floor = ary(background_noise_level)
+        weighted_sum_mat = raw_noise_values * final_w
+        weighted_sum = np.nansum(weighted_sum_mat, axis=1)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            noise_floor = np.true_divide(weighted_sum, final_w_sum)
+        self.noise_floor = noise_floor
+
+        assert np.isfinite(noise_floor).all()
         return self.noise_floor
 
     def infer_peakiness_from_background(self, negative_deviation_dilution_factor=1.0):
@@ -308,57 +288,6 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature):
                 y_values = ary([np.zeros(len(y))[peak_tips], y[peak_tips]])
                 ax.plot(x_values, y_values, color='black', **plot_kwargs)
         return ax
-
-class RealSpectrumPeakFinderDuplicatePeakiness(RealSpectrumPeakFinder, RealSpectrumLikelihoodDuplicatePeakiness):
-    def faster_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.7):
-        """
-        First apply the curvature thresholding to find the peaks.
-        Then within each peak, find the likelihood.
-        if none of the bins within said peak has a high enough likelihood, then reject it.
-        Parameters
-        ----------
-        curvature_threshold: threshold parameter inputted into the RealSpectrumCurvature.apply_threshold_on_curvature method.
-        peakiness_threshold: threshold parameter inputted into the RealSpectrumLikelihood.apply_threshold_on_full_peakiness method.
-            For both of these paramteres: a default best threshold is already provided if they're omitted in the call signature.
-
-        Returns
-        -------
-        array of shape (N,2) indicating start and end of all N peaks that passes through both thresholding methods.
-        """
-        print("Calculating curvatures in the spectrum, then applying a threshold to cut out peaks:")
-        curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
-        peak_indices = _bool_array_to_peak_indices(curvature_bool_array)
-
-        print("Calculating likelihood of each peak containing not-noise...")
-        new_peak_indices = []
-        windows = self.get_windows()
-
-        for l_index, r_index in peak_indices:
-            for centroid_ind in range(l_index, r_index):
-                window = windows[centroid_ind]
-                peakiness = self._Prob_slice_is_not_noise(self.counts[window])
-                # If ANY of these points reaches a peakiness above , then accept it, and move onto the next peak.
-                if peakiness >= peakiness_threshold:
-                    new_peak_indices.append([l_index, r_index])
-                    break
-
-        return ary(new_peak_indices)
-
-    def default_peak_identifier(self, curvature_threshold=-2.0, peakiness_threshold=0.7, peakiness_function=np.nanmean):
-        """
-        Slower than faster_peak_identifier becdause both the curvatures and peakiness are calculted for the entire spectrum.
-
-        See the docstring for faster_peak_identifier for Parameters and Returns
-
-        The difference being that ONLY bins that break through both thresholds simulatenously will be considered part of a peak
-        """
-        print("Calculating curvatures in the spectrum, then applying a threshold to cut out peaks:")
-        curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
-
-        print("Calculating likelihood of each peak containing not-noise...")
-        peakiness_bool_array = self.apply_threshold_on_full_peakiness(threshold=peakiness_threshold, function=peakiness_function)
-
-        return _bool_array_to_peak_indices(np.logical_and(curvature_bool_array, peakiness_bool_array))
 
 Region = namedtuple("Region", ["left_edge", "right_edge", "peak_tips"])
 
