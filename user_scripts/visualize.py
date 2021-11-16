@@ -1,3 +1,9 @@
+"""
+This is done by BODGING peakfinding.spectrum so that
+show_sqrt_scale and show_log_scale don't include the plt.show() and self._teardown(),
+So that we can safely build multiple axes in the same figure without them disappearing/
+    forced the figure to be shown.
+"""
 from peakfinding.spectrum import RealSpectrumInteractive, RealSpectrum
 import sys
 import matplotlib.pyplot as plt

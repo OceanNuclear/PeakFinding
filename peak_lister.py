@@ -22,7 +22,7 @@ if DEMONSTRATE_DECISION_MAKING:
     # calculate the required values first.
     curvature_coef = spectrum.calculate_sqrt_curvature()
     self_peakiness = spectrum.get_peakiness()
-    peakiness = spectrum.apply_function_on_peakiness(np.nanmean)
+    peakiness = spectrum.apply_function_on_full_peakiness(np.nanmean)
     peak_indices = spectrum.default_peak_identifier()
 
     import inspect
