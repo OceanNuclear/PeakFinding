@@ -18,7 +18,9 @@ class Histogram():
     Parameters
     ----------
     counts: an array of ints, each representing the count within a bin.
-    boundaries: 2d array of shape (len(counts), 2),
+    boundaries: bin-boundaries,
+        i.e. upper and lower class mark.
+        A 2d array of shape (len(counts), 2),
         the 2 values representing the lower and upper boundaries of the bin.
     bound_units: the units of the x axis of the hisogram.
     """
@@ -695,7 +697,7 @@ class RealSpectrumInteractive(RealSpectrum):
         self.fit_fwhm_cal( *valid_x_coords.flatten() )
         print("FWHM coefficients are found as", ", ".join(map(str, self.fwhm_cal)))
 
-    def get_windows(self):
+    def get_windows(self, width_multiplier=1.0):
         """
         Uses the FWHM equation to calculate the width of peak to be expected at each energy,
         thus returning the window that fits the various widths 
@@ -709,7 +711,8 @@ class RealSpectrumInteractive(RealSpectrum):
 
         windows = []
         for mid_E in self.boundaries.mean(axis=1): # calculate the mean energy of that bin.
-            lower_lim, upper_lim = mid_E - self.get_width_at(mid_E)/2, mid_E + self.get_width_at(mid_E)/2
+            half_width = width_multiplier/2 * self.get_width_at(mid_E)
+            lower_lim, upper_lim = mid_E - half_width, mid_E + half_width
             above_lower_lim = (self.boundaries>=lower_lim).any(axis=1)
             below_upper_lim = (self.boundaries<=upper_lim).any(axis=1)
             window = np.logical_and(above_lower_lim, below_upper_lim)

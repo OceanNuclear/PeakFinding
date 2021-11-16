@@ -81,7 +81,7 @@ class Poisson(ProbabilityDistributionLikelihood):
                 first_part, second_part = overflow_likely_part[:N_2], overflow_likely_part[-N_2:]
                 # ******* ^ IF THIS LINE FAILS THAT MEANS YOU FAILED TO PASS IN INT AS SAMPLES. YOU MAY HAVE USED FLOATS
                 overflowy_part_folded_in_half = first_part + second_part[::-1]
-                if (N%2)==1:
+                if (N%2)==1: # take care of odd N case
                     overflowy_part_folded_in_half = np.append(overflowy_part_folded_in_half, overflow_likely_part[N_2]) # append in the exact half-way point.
 
                 nll = const_offset + fsum(overflowy_part_folded_in_half) # the last two terms will partially cancel out each other. so they must be added together first.
