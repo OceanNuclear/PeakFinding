@@ -3,7 +3,7 @@ import numpy as np
 from tqdm import tqdm
 
 from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
-from peakfinding.poisson_distribution import Poisson, Normal, Chi2
+from peakfinding.poisson_distribution import PoissonFast, Normal, Chi2
 __all__ = ["SpectrumGoodnessOfFit"]
 
 """
@@ -39,7 +39,7 @@ class SpectrumGoodnessOfFit():
 
         for num_window, (samples, sample_mean) in tqdm(enumerate(zip(spread_stack.T, mean_stack)),
                                                     total=len(counts)-window_width+1):
-            poisson_hypothesized = Poisson(sample_mean)
+            poisson_hypothesized = PoissonFast(sample_mean)
             # calculate the contribution to the poisson chi2 equivalent quantity.
             poisson_chi2_components = poisson_hypothesized.negative_log_likelihood(samples)
             poisson_goodness_of_fit_full_stack.append(poisson_chi2_components)

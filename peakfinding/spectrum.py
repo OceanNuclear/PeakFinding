@@ -11,28 +11,34 @@ from numpy import array as ary
 from matplotlib import pyplot as plt
 from matplotlib import ticker as ticker
 
-__all__ = ["Histogram", "TimeSeries", "IECPeak", "RealSpectrum", "RealSpectrumInteractive"]
+__all__ = ["Histogram", "TimeSeries", "RealSpectrum", "RealSpectrumInteractive"]
 
+@dataclass(frozen=True, eq=False, unsafe_hash=False)
 class Histogram():
     """
     Parameters
     ----------
     counts: an array of ints, each representing the count within a bin.
-    boundaries: bin-boundaries,
-        i.e. upper and lower class mark.
-        A 2d array of shape (len(counts), 2),
-        the 2 values representing the lower and upper boundaries of the bin.
-    bound_units: the units of the x axis of the hisogram.
+    bound_units: str denoting the unit of the bin-boundaries.
     """
-    def __init__(self, counts : np.ndarray, boundaries : np.ndarray, bound_units : str):
-        self.counts = counts
-        self.boundaries = boundaries
-        self.bound_units = bound_units
+    counts : np.ndarray
+    bound_units: str
+
+    def boundaries(self):
+        """
+        boundaries: bin-boundaries,
+            i.e. upper and lower class mark.
+            A 2d array of shape (len(counts), 2),
+            the 2 values representing the lower and upper boundaries of the bin.
+        bound_units: the units of the x axis of the hisogram.
+        """
+        arange = ary([np.arange(len(self.counts)), np.arange(1, len(self.counts)+1)]).T
+        return arange
 
     def plot_log_scale(self, ax=None, **kwargs):
         if not ax:
             ax = plt.subplot()
-        line, = ax.semilogy(self.boundaries.flatten(), np.repeat(self.counts, 2), **kwargs)
+        line, = ax.semilogy(self.boundaries().flatten(), np.repeat(self.counts, 2), **kwargs)
         ax.set_xlabel(self.bound_units)
         ax.set_ylabel("counts")
         return ax, line
@@ -41,7 +47,7 @@ class Histogram():
         if not ax:
             ax = plt.subplot()
         transformed_cnts = np.sqrt(self.counts)
-        line, = ax.plot(self.boundaries.flatten(), np.repeat(transformed_cnts, 2), **kwargs)
+        line, = ax.plot(self.boundaries().flatten(), np.repeat(transformed_cnts, 2), **kwargs)
         ax.set_xlabel(self.bound_units)
         # y labelling
         if rewrite_yticks:
@@ -53,13 +59,20 @@ class Histogram():
         return ax, line
 
 class TimeSeries(Histogram):
+    def __init__(self, counts, boundaries, bound_units):
+        super().__init__(counts, bound_units)
+        self.boundaries = boundaries
+
     def __add__(self, ts2):
+        """
+        Add two time-series together, in the time-axis.
+        """
         counts = np.hstack(self.counts, ts2.counts)
         boundaries = np.vstack(self.boundaries, ts2.boundaries)
         bound_units = self.bound_units
         return self.__class__(counts, boundaries, bound_units)
 
-@dataclass
+@dataclass(frozen=True, eq=False)
 class IECPeak:
     """Data class storing one peak specified in an IEC file"""
     energy : float
@@ -78,33 +91,36 @@ def overwrite_protection(method_before_decoration):
     return method_after_decoration
 
 class RealSpectrum(Histogram):
-    def __init__(self, counts, boundaries, bound_units, live_time:float, **init_dict):
+    def __init__(self, counts, bound_units, live_time:float, **init_dict):
         """
         Creates a Real Spectrum, tailored to gamma spectra, but can be used for other particle count vs energy spectra.
 
         live_time: float scalar denoting the duration of this spectrum
         """
-        super().__init__(counts, boundaries, bound_units)
+        super().__init__(counts, bound_units)
         self.live_time = live_time # duration in seconds
         self.__dict__.update(init_dict)
 
     def __add__(self, rs2): # rs2 = RealSpectrum 2
+        """
+        Add two spectra together, bin-to-bin.
+        """
         warnings.warn("Adding spectra together.\nMake sure you don't repeat the same spectrum, and add chronologically left-to-right.", UserWarning)
         init_dict = rs2.__dict__.copy() 
         init_dict.update(self.__dict__) # overwrite with properties of self whenever there's a duplication.
+        # do not update these three default parameters
         init_dict.pop("counts")
-        init_dict.pop("boundaries")
         init_dict.pop("bound_units")
         init_dict.pop("live_time")
 
-        # defined in super().__init__:
-        counts = rs2.counts + self.counts
-        boundaries = self.boundaries
-        bound_units = self.bound_units
+        # add the counts up properly
+        sum_counts = rs2.counts + self.counts
 
-        # special cases:
-        live_time = self.live_time + rs2.live_time
+        # update live time.
+        sum_live_time = self.live_time + rs2.live_time
 
+        # Update ONLY the date_end_mea (measurement end time)
+        # and wall_time. (live_time has already been updated in the line above.)
         if "date_end_mea" in init_dict.keys():
             if hasattr(rs2, "date_end_mea"):
                 init_dict["date_end_mea"] = ts2.date_end_mea
@@ -114,11 +130,46 @@ class RealSpectrum(Histogram):
             if hasattr(self, "wall_time") and hasattr(rs2, "wall_time"):
                 init_dict["wall_time"] = self.wall_time + rs2.wall_time
 
-        return self.__class__(counts, boundaries, bound_units, live_time, **init_dict)
+        return self.__class__(sum_counts, self.bound_units, sum_live_time, **init_dict)
+
+    def boundaries(self):
+        """
+        Generates the boundaries' values (its unit is specified in self.bound_units)
+        Output
+        ------
+        e.g. for a spectrum with bound_units=keV, self.boundaries() 
+        a matrix of shape (len(self.counts), 2) giving the lower and upper bounds of each bin.
+        """
+        arange = ary([np.arange(len(self.counts)), np.arange(1, len(self.counts)+1)]).T
+        return self.calibration_equation(self.get_calibration_coefs())(arange)
+
+    def get_calibration_coefs(self):
+        if hasattr(self, "mca_cal"):
+            return self.mca_cal
+        elif hasattr(self, "energy_fit"):
+            return self.energy_fit
+        else:
+            raise RuntimeError(f"{self} has no 'mca_cal' or 'energy_fit' attribute!")
 
     @staticmethod
     def calibration_equation(calibration_constants):
         return np.poly1d(calibration_constants[::-1])
+
+    def ind_to_E(self, indices):
+        """
+        Convert an index / an array of indices into energy value(s).
+        """
+        return self.calibration_equation(self.get_calibration_coefs())(indices)
+
+    def E_to_ind(self, energy):
+        """
+        Converts an energy / an array of energies back into an index/ indices.
+        Output
+        ------
+        energy : float (array is NOT allowed)
+        """
+        bins_containing_energy = np.logical_and(self.boundaries()[:,0]<=energy, energy<=self.boundaries()[:,1])
+        return np.argwhere(bins_containing_energy)[0,0]
 
     @classmethod
     def from_csv(cls, file_path):
@@ -135,13 +186,12 @@ class RealSpectrum(Histogram):
         """
         import pandas as pd
         df = pd.read_csv(file_path, index_col=[0])
-        boundaries = df[df.columns[:2]].values
         counts = df[df.columns[2]].values.astype(int)
         live_time = np.nan
-        return cls(counts, boundaries, "keV", live_time)
+        return cls(counts, "keV", live_time)
 
     @classmethod
-    def from_IEC(cls, file_path, read_calibration_equation=True):
+    def from_IEC(cls, file_path):
         """
         Largely taken and adapted from UKAEA Steve Bradnam's ADRIANA toolbox utility (private communications)
         Credits to him.
@@ -150,7 +200,7 @@ class RealSpectrum(Histogram):
         """
         counts, channel_index = [], []
         sample_peaks_energy, sample_peaks_FWHM = [], []
-        init_dict = {}
+        init_dict = {} # accumulate information into this dict
         with open(file_path) as f:
 
             READ_PEAKS, READ_INTO_DATA = False, False
@@ -167,7 +217,7 @@ class RealSpectrum(Histogram):
                 elif lineno == 3:
                     init_dict["mca_cal"] = [float(i) for i in line.split()] # p0, p1, p2, p3
                 elif lineno == 4:
-                    init_dict["fwhm_cal"] = [float(i) for i in line.split()] # p0, p1, p2, p3
+                    init_dict["fwhm_cal"] = [float(i) for i in line[:-5].split()] # p0, p1, p2, p3
 
                 # toggling "read-into" flags
                 if "SPARE" in line.strip():
@@ -193,25 +243,20 @@ class RealSpectrum(Histogram):
         counts = ary(counts[:num_bins], dtype=int)
         # channel_index = ary(channel_index) # not that useful TBH, just gonna ignore it.
 
-        # default : saving as bin boundaries
-        boundaries = ary([np.arange(num_bins), np.arange(1, num_bins+1)]).T
-        bound_units = "bin"
+        # calibration equation unit = keV if it's valid.
+        bound_units = "keV"
+        if (ary(init_dict["mca_cal"])==0).all(): 
+            # invalid calibration equation.
+            bound_units = "bin"
 
-        # if read_calibration_equation: convert the bin boundaries values into energy.
-        if init_dict["mca_cal"]==[0, 0, 0, 0]:
-            read_calibration_equation = False
-        if read_calibration_equation:
-            boundaries = cls.calibration_equation(init_dict["mca_cal"])(boundaries)
-            bound_units = "keV"
-
-        return cls(counts, boundaries, bound_units, live_time, **init_dict)
+        return cls(counts, bound_units, live_time, **init_dict)
 
     @classmethod
     def from_Spe(cls, file_path):
         """
         Reads from an .Spe file and creates an object.
         """
-        init_dict = {}
+        init_dict = {} # accumulate information into this dict
         # default unit is bins
         with open(file_path) as f:
             text = f.read()
@@ -232,7 +277,7 @@ class RealSpectrum(Histogram):
                     raise FutureWarning("lowest channel number isn't 0, this can cause error in the future!")
                 counts = ary([float(i) for i in lines[2+min_chan:3+max_chan]], dtype=int)
 
-            elif block_identifier in ("TUBE_CURRENT", "DATE_IRRAD"):
+            elif block_identifier in ("DATE_IRRAD", "TUBE_CURRENT"):
                 int_vector = regex_num(line[1], int)
                 init_dict[block_identifier.lower()] = int_vector
 
@@ -244,32 +289,21 @@ class RealSpectrum(Histogram):
                 calibration_constants = lines[2].split()
                 init_dict[block_identifier.lower()] = [float(i) for i in calibration_constants[:num_constants]]
                 if len(calibration_constants)>num_constants:
-                    init_dict[block_identifier.lower() + "_unit"]= calibration_constants[num_constants:]
+                    init_dict[block_identifier.lower() + "_unit"]= " ".join(str(i) for i in calibration_constants[num_constants:])
 
             elif len(block_identifier)>0: # all other types of blocks (except empty ones)
                 init_dict[block_identifier.lower()] = "\n".join(lines[1:-1])
-                # the last line is always an empty line, caused by splitting at "$" and then "\n",
+                # the last block is always an empty line, caused by splitting at "$" and then "\n",
                 # which are often characters next to each other.
 
-        bin_boundaries = ary([np.arange(max_chan+1), np.arange(1, max_chan+2)]).T
-        # bin_boundaries = ary([np.arange(max_chan+1), np.arange(1, max_chan+2)]).T - 0.5
-        # it's not clear whether we should subtract 0.5 to make the centroid of the first bin 0 or not.
-        # I'll assume not.
-
-        # check for the clibration equation
         if "mca_cal" in init_dict or "energy_fit" in init_dict:
-            if "mca_cal" in init_dict:
-                calibration_eqn = cls.calibration_equation(init_dict["mca_cal"])
-            elif "energy_fit" in init_dict:
-                calibration_eqn = cls.calibration_equation(init_dict["energy_fit"])
-            boundaries = calibration_eqn(bin_boundaries)
-            bound_units = init_dict.get("mca_cal_unit", ["keV",])[0]
+            bound_units = init_dict.get("mca_cal_unit", "keV") # default unit = keV
 
         else:# no calibration equation available
-            boundaries = bin_boundaries
+            init_dict["mca_cal"] = [0, 1]
             bound_units = "bins"
-            
-        return cls(counts, boundaries, bound_units, live_time, **init_dict)
+
+        return cls(counts, bound_units, live_time, **init_dict)
 
     @classmethod
     def from_multiple_files(cls, *filenames):
@@ -298,9 +332,10 @@ class RealSpectrum(Histogram):
         file_path: name of the output file (should end in .Spe)
         mimic_MAESTRO: boolean for whether the blocks should be arranged in exactly the same order as a MAESTRO .Spe file is.
         """
-        # CAREFULLY write the top half of the file, which includes $MEA_TIM that needs to be treated carefully.
+        self_dict = OrderedDict() # a dictionary of all the properties of file.
+
         if mimic_MAESTRO:
-            self_dict = OrderedDict()
+            # CAREFULLY write the top half of the file, which includes $MEA_TIM that needs to be formatted correctly.
             with open(file_path, "w") as f:
                 # $SPEC_ID
                 f.write(_format_Spe_key("spec_id"))
@@ -316,18 +351,22 @@ class RealSpectrum(Histogram):
                 f.write("$MEAS_TIM:\n{} {}\n".format(live_time, wall_time))
 
             # all other keys that are also block_identifier used in a MAESTRO .Spe file
-            other_MAESTRO_keys = ["counts", "roi", "presets", "ener_fit", "mca_cal", "shape_cal"]
+            other_MAESTRO_keys = ["counts", "roi", "presets", "energy_fit", "mca_cal", "shape_cal"]
             for key in other_MAESTRO_keys:
                 if hasattr(self, key):
-                    self_dict[key] = self.__dict__[key]
+                    self_dict[key.replace("energy_fit", "ener_fit")] = self.__dict__[key]
+                    # I've selected to translate '$ENER_FIT' into .energy_fit, so sadly this is the price I pay.
 
             # update all other keys
+            exclusion_list = ("live_time", "wall_time", "spec_rem", "spec_id", "date_mea", "sample_peaks", "mca_cal_unit")
             for key in self.__dict__.keys():
                 # be careful not to include the keys corresponding to blocks that are already written.
-                if key not in ("live_time", "wall_time", "spec_rem", "spec_id", "date_mea"):
+                if key not in exclusion_list: # list of attributes to exclude
+                    # sample_peaks is an attributes only present in IEC files.
+                    # the rest is a list of attributes already recorded and written down
                     self_dict[key] = self.__dict__[key]
         else:
-            # just dump in every attribute without caring about the order.
+            # just carelessly dump in every attribute without caring about the order.
             self_dict = self.__dict__
             # clear the file
             with open(file_path, "w") as f:
@@ -339,9 +378,9 @@ class RealSpectrum(Histogram):
                 f.write("$MEAS_TIM:\n{} {}\n".format(self.wall_time, self.live_time))
 
             for k, v in self_dict.items():
-                if k in ("wall_time", "live_time", "boundaries", "bound_units"):
+                if k in ("wall_time", "live_time", "bound_units"):
                     continue # live/wall time has already been taken care of;
-                    # and boundaries (and units) aren't recorded in the .Spe files to begin with.
+                    # and units aren't recorded in the .Spe files to begin with.
 
                 elif k.startswith("date_"): # all date format metadata
                     f.write(_format_Spe_key(k))
@@ -355,11 +394,16 @@ class RealSpectrum(Histogram):
 
                 elif k == "energy_fit": # non-standard energy calibration constant used by Maestro
                     f.write("$ENER_FIT\n")
-                    f.write(_format_Spe_CAL(v)[2:]+ "\n") # doesn't need the "2\n" at the beginning.
+                    f.write(_format_Spe_CAL(v)[2:]+ "\n")
+                    # ENER_FIT is MCA-specific/non-standard, so it doesn't require the
+                    # "2\n" that otherwise would've appeared at the beginning.
 
                 elif k.endswith("cal"): # all standard calibration coefficients
                     f.write(_format_Spe_key(k))
-                    f.write(_format_Spe_CAL(v)+ "\n")
+                    if k == "mca_cal":
+                        f.write(_format_Spe_CAL(v)+" "+ self_dict.get("mca_cal_unit", self_dict["bound_units"]) + "\n")
+                    else:
+                        f.write(_format_Spe_CAL(v)+ "\n")
 
                 elif not k.startswith("_"): # all other text information
                     if isinstance(v, list):
@@ -374,7 +418,7 @@ class RealSpectrum(Histogram):
     @overwrite_protection
     def to_csv(self, file_path):
         import pandas as pd
-        df = pd.DataFrame(ary([self.counts, *self.boundaries.T]).T, columns=["lenergy", "uenergy", "count"])
+        df = pd.DataFrame(ary([self.counts, *self.boundaries().T]).T, columns=["lenergy", "uenergy", "count"])
         df.to_csv(file_path, index_label="channel")
         return
 
@@ -399,7 +443,8 @@ class RealSpectrum(Histogram):
                 f.write(_format_IEC_line()) #otherwise write an empty line
             # FWHM calibration coefficients
             if hasattr(self, "fwhm_cal") and len(self.fwhm_cal)>0:
-                f.write(_format_IEC_vector_line([*self.fwhm_cal, *[0 for _ in range( 4-len(self.fwhm_cal) )]], 14)[:-5]+"1    \n")
+                f.write(_format_IEC_vector_line([*self.fwhm_cal, *[0 for _ in range( 4-len(self.fwhm_cal) )]], 14)[:-5] + "1    \n")
+                # write a modified IEC_vector_line where the last 5 characters are replaced as above.
             else:
                 f.write(_format_IEC_line()) #otherwise write an empty line
             # 4 empty lines
@@ -409,7 +454,7 @@ class RealSpectrum(Histogram):
             f.write(_format_IEC_line())
             f.write(_format_IEC_line("SPARE"))
             num_peak_lines = -1
-            # write the sample peaks that was previously recorded
+            # write the sample peaks that were previously recorded
             for num_peak_lines, (peak1, peak2) in enumerate(
                 zip_longest(self.__dict__.get("sample_peaks", [])[::2], self.__dict__.get("sample_peaks", [])[1::2], 
                 fillvalue=IECPeak(0, 0) )):
@@ -452,8 +497,8 @@ def _format_Spe_DATE(date):
     return date.strftime("%m/%d/%Y %H:%M:%S\n")
 
 class RealSpectrumInteractive(RealSpectrum):
-    def __init__(self, counts, boundaries, bound_units, live_time, **init_dict):
-        super().__init__(counts, boundaries, bound_units, live_time, **init_dict)
+    def __init__(self, counts, bound_units, live_time, **init_dict):
+        super().__init__(counts, bound_units, live_time, **init_dict)
         self._clicked_and_dragged = []
 
     def show_log_scale(self, ax=None, execute_before_showing=None, **kwargs):
@@ -618,7 +663,7 @@ class RealSpectrumInteractive(RealSpectrum):
         ∵ FWHM_stat = √N = √(charge_of_pulse/e) # e = electron charge
         caveat : FWHM_stat_HPGe (for HPGe detector specifically) : F(Fano factor) * FWHM_stat
         ∵ FWHM_overall = √(FWHM_stat^2 + FWHM_others^2) # where others = constant
-        ∴ FWHM_overall = √(  √(B*√E)^2 + A            )
+        ∴ FWHM_overall = √(  (B*√E)^2  +      A       )
         # in other words, if A and B are fitted correctly,
           B = (F * FWHM_stat            )^2
             = (F * √N                   )^2
@@ -662,6 +707,15 @@ class RealSpectrumInteractive(RealSpectrum):
         return self.fwhm_cal
 
     def get_width_at(self, E):
+        """
+        Input
+        -----
+        E : float / array of floats denoting the energy of a hypothetical peak
+        Output
+        ------
+        dE: width of the hypothetical peak
+        Therefore this program is 'dimensionless', i.e. It doesn't change the unit between input and output
+        """
         assert hasattr(self, "fwhm_cal"), "Must run one of the fit_fwhm_cal* method first."
         inside_sqrt_func = np.poly1d(self.fwhm_cal[::-1])
         width_at_E = np.sqrt(inside_sqrt_func(E))
@@ -707,14 +761,15 @@ class RealSpectrumInteractive(RealSpectrum):
         a mask of shape [len(self.counts), len(self.counts)]
         """
         assert hasattr(self, "fwhm_cal"), "Must run one of the fit_fwhm_cal* method first before we can calculate the window sizes."
-        E_mid = self.boundaries.mean(axis=1)
+        boundaries = self.boundaries()
+        E_mid = boundaries.mean(axis=1)
 
         windows = []
-        for mid_E in self.boundaries.mean(axis=1): # calculate the mean energy of that bin.
+        for mid_E in boundaries.mean(axis=1): # calculate the mean energy of that bin.
             half_width = width_multiplier/2 * self.get_width_at(mid_E)
             lower_lim, upper_lim = mid_E - half_width, mid_E + half_width
-            above_lower_lim = (self.boundaries>=lower_lim).any(axis=1)
-            below_upper_lim = (self.boundaries<=upper_lim).any(axis=1)
+            above_lower_lim = (boundaries>=lower_lim).any(axis=1)
+            below_upper_lim = (boundaries<=upper_lim).any(axis=1)
             window = np.logical_and(above_lower_lim, below_upper_lim)
             windows.append(window)
         return ary(windows)

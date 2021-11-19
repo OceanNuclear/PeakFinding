@@ -17,6 +17,7 @@ values = input()
 if values.strip()=="":
     spectrum.fit_fwhm_cal_interactively()
 elif values=="infer":
+    raise NotImplementedError("Do not recommend using infer anymore as the FWHM values set at the moment of data acquisition is >0.")
     fwhm_preferences = ("shape_cal", "fwhm_cal")
     for fwhm_attr in fwhm_preferences:
         if hasattr(spectrum, fwhm_attr):
@@ -69,10 +70,11 @@ if OLD_DEMONSTRATION:
 
 else:
     fig, (ax_u, ax_m, ax_l) = plt.subplots(3, 1, sharex=True)
+    fig.tight_layout()
     # calculate the required values first.
     curvature_values = spectrum.calculate_sqrt_curvature()
     peakiness = spectrum.get_peakiness()
-    curvature_threshold, peakiness_threshold = inspect.signature(spectrum.peak_identifier).parameters.values()
+    curvature_threshold, peakiness_threshold, _ = inspect.signature(spectrum.peak_identifier).parameters.values()
 
     # actual spectrum plot (ax_u)
     spectrum.plot_sqrt_scale(ax=ax_u)

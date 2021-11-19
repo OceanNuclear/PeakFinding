@@ -50,6 +50,16 @@ class Poisson(ProbabilityDistributionLikelihood):
         """
         return self._distribution.pmf(samples)
 
+    def less_naive_negative_log_likelihood(self, samples):
+        if self._lambda==0:
+            return 0.0
+        return self.naive_NLL(samples) - 0.5*ln(tau * self._lambda)
+
+class PoissonFast():
+    def __init__(self, lamb):
+        self._distribution = 'Poisson'
+        self._lambda = lamb
+
     def negative_log_likelihood(self, samples):
         """
         Direct formula that calculates the negative log likelihood
@@ -88,11 +98,6 @@ class Poisson(ProbabilityDistributionLikelihood):
 
             NLL_list.append(nll)
         return ary(NLL_list)
-
-    def less_naive_negative_log_likelihood(self, samples):
-        if self._lambda==0:
-            return 0.0
-        return self.naive_NLL(samples) - 0.5*ln(tau * self._lambda)
 
 class Normal(ProbabilityDistributionLikelihood):
     def __init__(self, mean, variance):
@@ -141,3 +146,11 @@ class Chi2(ProbabilityDistribution):
 
     def pdf(self, samples):
         return self._distribution.pdf(samples)        
+
+class Chi2List(list):
+    def __getitem__(self, N):
+        while N>=len(self):
+            self.append(Chi2( len(self) ))
+        if N<0:
+            N = 0
+        return super().__getitem__(N)

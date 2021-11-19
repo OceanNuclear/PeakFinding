@@ -2,7 +2,7 @@ from peakfinding.spectrum import RealSpectrumInteractive, RealSpectrum
 import sys
 
 print(*sys.argv[1:-1])
-print(sys.argv[-1]+".Spe")
+print(sys.argv[-1]+".IEC")
 """
 Note: inside ipython, the using * (wildcard) in sys.argv will give an UNSORTED (disorderd!) list of the files grepped by wildcard.
 But outside of ipython sys.argv will give a sorted sys.argv.
