@@ -106,7 +106,7 @@ class RealSpectrumCurvature(RealSpectrumWithChi2):
         # create lists to contain for the following vectors
         y = sqrt(self.counts)
         curvature_coef = []
-        if not hasattr(self, "fitted_curvature")
+        if not hasattr(self, "fitted_curvature"):
             print("Calculating curvature...")
             for window in tqdm(self.get_windows()):
                 if window.sum() < 3:
@@ -197,35 +197,46 @@ class RealSpectrumLikelihoodSimple(RealSpectrumWithChi2):
 
     def get_peakiness(self, window_size_multiplier=1.0):
         """
+        peakiness is a short form of 'Probability of this bin's count not being part of the Poisson distribution of neighbouring bins'.
         Calculates the peakiness of the entire spectrum, 
         one scalar for each bin, 
         forming a vector of the same shape as the spectrum.
         """
         if not hasattr(self, "peakiness"):
             print("Calculating the (true) peakiness of each bin...")
-            peakiness = []
-            for window in tqdm(self.get_windows(width_multiplier=window_size_multiplier)):
-                samples = self.counts[window]
-                peakiness.append(self._Prob_slice_is_not_noise(samples))
-            self.peakiness = ary(peakiness)
+            Prob_this_isnt_part_of_poisson_noise = []
+
+            validation_windows = self.get_windows(width_multiplier=window_size_multiplier)
+            diag_crossed_out = validation_windows.copy()
+            np.fill_diagonal(diag_crossed_out, False) # new method
+            for i, (v_wind, self_wind) in tqdm(enumerate(zip(validation_windows, diag_crossed_out)), total=len(validation_windows)):
+                # P(this window contains a Poisson distribution)
+                validation_samples = self.counts[v_wind]
+                Probability_is_not_poisson = self._Prob_slice_is_not_noise(validation_samples)
+                # P(this is a point in that poisson distribution)
+                exclude_self_samples = self.counts[self_wind]
+                nll = PoissonFast(validation_samples.mean()).negative_log_likelihood(self.counts[i:i+1]) # new method
+                Probability_is_not_member_of_poisson = self._Chi2_dists[1].cdf(nll.sum())
+                Prob_this_isnt_part_of_poisson_noise.append(max([Probability_is_not_poisson, Probability_is_not_member_of_poisson]))
+            self.peakiness = ary(Prob_this_isnt_part_of_poisson_noise)
         return self.peakiness
 
 _gaussian = lambda x, sigma, mu: exp(-((x-mu)/sigma)**2/2)
 
 class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
-    def determine_noise_floor(self, max_pvalue=0.5, smear_factor=2.35*2):
+    def determine_noise_floor(self, pvalue_for_noise=0.8, smear_factor=2.35*2):
         """
         Determine 
         Output
         ------
         (Also sets self.raw_noise_floor and self.noise_floor)
         self.raw_noise_floor : the raw count values of bins which are considered as noise.
-        self.noise_floor : the noise
+        self.noise_floor : the noise floor calculated by weighting them
         """
         L = len(self.counts)
         if not hasattr(self, "raw_noise_floor"):
             # print("Finding the raw_noise_floor values...")
-            is_noise = self.get_peakiness(window_size_multiplier=1.0) <= max_pvalue
+            is_noise = self.get_peakiness(window_size_multiplier=1.0) <= pvalue_for_noise
             peaks_replaced_by_nans = np.where(is_noise, self.counts, np.nan)
             self.raw_noise_floor = peaks_replaced_by_nans
         """
@@ -303,7 +314,7 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
             self.peakiness_from_bg_noise = ary(peakiness_from_bg_noise)
         return self.peakiness_from_bg_noise
 
-Region = namedtuple("Region", ["left_edge", "right_edge", "peak_tips"])
+Region = namedtuple("Region", ["left_edge", "right_edge", "peak_tips", "confidence"])
 
 class RealSpectrumPeakFinder(RealSpectrumCurvature):
     def highlight_peaks(self, ax, peaks_identified, plot_scale="sqrt", color="C1", **plot_kwargs):
@@ -330,20 +341,20 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature):
         return ax
 
 class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumLikelihoodWithNoiseFlooring):
-    def peak_identifier(self, curvature_threshold=-4.0, peakiness_threshold=0.5, negative_deviation_dilution_factor=0.0):
+    def peak_identifier(self, curvature_threshold=-4.0, peakiness_threshold=0.7, negative_deviation_dilution_factor=0.0):
         """
         curvature_threshold is only used for deciding where the peak tips lie, 
         """
         curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
-        self.infer_peakiness_from_background(negative_deviation_dilution_factor=negative_deviation_dilution_factor)
+        peakiness_from_bg_noise = self.infer_peakiness_from_background(negative_deviation_dilution_factor=negative_deviation_dilution_factor)
 
-        # use curvature
+        # use curvature to decide where are the peak tips
         curvature_vector = self.calculate_sqrt_curvature()
         diff = np.diff(curvature_vector)
         fDiff, bDiff = np.hstack([diff, [np.nan]]), np.hstack([[np.nan], diff])
         local_mins_in_curvature_plot = np.logical_and(curvature_bool_array, np.logical_and(fDiff>0, bDiff<0))
 
-        peakiness_bool_array = self.peakiness_from_bg_noise >= peakiness_threshold
+        peakiness_bool_array = peakiness_from_bg_noise >= peakiness_threshold
 
         regions = []
         # for l_index, r_index in _bool_array_to_peak_indices(np.logical_and(curvature_bool_array, peakiness_bool_array)):
@@ -353,5 +364,6 @@ class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumL
             peaks_as_bool = np.logical_and(bracketing_dummy_bool_vector, local_mins_in_curvature_plot)
 
             peak_locations = np.argwhere(peaks_as_bool)[:,0]
-            regions.append(Region(l_index, r_index, peak_locations))
+            confidence = self.peakiness_from_bg_noise[peaks_as_bool]
+            regions.append(Region(l_index, r_index, peak_locations, confidence))
         return regions
