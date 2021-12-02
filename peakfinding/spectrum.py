@@ -13,6 +13,16 @@ from matplotlib import ticker as ticker
 
 __all__ = ["Histogram", "TimeSeries", "RealSpectrum", "RealSpectrumInteractive"]
 
+"""
+Not very important TODO, but:
+1. To reduce the amount of dependencies,
+    The FWHM equation should be defined as
+        peak-width(units:num-bin) = sqrt( A + B*bin-number ) 
+    rather than
+        peak-width(units:E) = sqrt( A + B*E )
+    This might lead to other problems down the line, however.
+"""
+
 @dataclass(frozen=True, eq=False, unsafe_hash=False)
 class Histogram():
     """
@@ -140,7 +150,7 @@ class RealSpectrum(Histogram):
         e.g. for a spectrum with bound_units=keV, self.boundaries() 
         a matrix of shape (len(self.counts), 2) giving the lower and upper bounds of each bin.
         """
-        arange = ary([np.arange(len(self.counts)), np.arange(1, len(self.counts)+1)]).T
+        arange = ary([np.arange(len(self.counts)), np.arange(1, len(self.counts)+1)]).T - 0.5 # -0.5 offset, to make sure that the n-th bin's (upper-lim + lower-lim)/2 = n.
         return self.calibration_equation(self.get_calibration_coefs())(arange)
 
     def get_calibration_coefs(self):
@@ -517,7 +527,7 @@ class RealSpectrumInteractive(RealSpectrum):
         if callable(execute_before_showing): # if this is a function
             execute_before_showing()
         self._setup_fig(ax.figure, False)
-        plt.show()
+        plt.show(block=False)
         self._teardown_fig()
         return
 
@@ -552,7 +562,7 @@ class RealSpectrumInteractive(RealSpectrum):
         if callable(execute_before_showing): # if this is a function
             execute_before_showing()        
         self._setup_fig(ax.figure, True)
-        plt.show()
+        plt.show(block=False)
         self._teardown_fig()
         return
 

@@ -48,8 +48,6 @@ def _bool_array_to_peak_indices(bool_array):
     peak_start_stops = np.diff(bool_array.astype(int))
     peak_ledge_indices = np.argwhere(peak_start_stops==1).flatten()
     peak_redge_indices = np.argwhere(peak_start_stops==-1).flatten()
-    if peak_redge_indices[-1] == len(bool_array):
-        peak_redge_indices[-1] = len(bool_array)-1 # clip the right-most edge index into range.
     
     return ary([peak_ledge_indices, peak_redge_indices]).T
 
@@ -221,7 +219,7 @@ class RealSpectrumLikelihoodSimple(RealSpectrumWithChi2):
             self.peakiness = ary(Prob_this_isnt_part_of_poisson_noise)
         return self.peakiness
 
-_gaussian = lambda x, sigma, mu: exp(-((x-mu)/sigma)**2/2)
+_gaussian = lambda x, sigma, mu: exp(-((x-mu)/sigma)**2 /2)
 
 class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
     def determine_noise_floor(self, pvalue_for_noise=0.8, smear_factor=2.35*2):
@@ -252,8 +250,8 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         # make a weight vector that's almost twice the length of the spectrum.
 
         energies = self.boundaries().mean(axis=1)
-        sigma_at_E = self.get_width_at(energies)
-        weight_vector_decay_rate = 1/2.35*smear_factor * sigma_at_E
+        fwhm_at_E = self.get_width_at(energies)
+        weight_vector_decay_rate = fwhm_at_E/2.35 * smear_factor
         weight_matrix = np.empty([L, L])
 
         for i, (s, mu) in enumerate(zip(weight_vector_decay_rate, energies)):
@@ -341,9 +339,19 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature):
         return ax
 
 class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumLikelihoodWithNoiseFlooring):
-    def peak_identifier(self, curvature_threshold=-4.0, peakiness_threshold=0.7, negative_deviation_dilution_factor=0.0):
+    def peak_identifier(self, curvature_threshold=-4.0, peakiness_threshold=0.9, negative_deviation_dilution_factor=0.0):
         """
-        curvature_threshold is only used for deciding where the peak tips lie, 
+        curvature_threshold is only used for deciding where the peak tips lie.
+        peakiness_threshold decides region of interest: any part of the spectrum with self.peakiness_from_bg_noise above peakiness_threshold is considered a ROI(region of interest)
+        
+        Returns
+        -------
+        regions
+            four properties of regions are:
+            l_index: index of the leftmost bin in this ROI.
+            r_index: index of the rightmost bin in this ROI. PLUS ONE
+                l_index and r_index are used together to specify an ROI using self.noise_floor[l_index:r_index]
+                Note the right-hand-side-exclusive nature of python indexing. This forces r_index to be larger than the index of the right-most value by 1.
         """
         curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
         peakiness_from_bg_noise = self.infer_peakiness_from_background(negative_deviation_dilution_factor=negative_deviation_dilution_factor)

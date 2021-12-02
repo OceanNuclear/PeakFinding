@@ -42,3 +42,6 @@ Notice the constant-width fuzz-band in the sqrt-scale presentation, as previousl
 A peak detection-algorithm was derived based on the Poisson-ian nature of the particle spectrum. To increase the specificity of its result, a simple 2nd order fit algorithm was used to reject peaks with absolute 2nd order derivative lower than a threshold.
 
 ![Peak detection explanation figure](media/decision_explanation.png "An output of decision_explanation.py")
+
+## Advanced usage
+For reference, commit c726c8b1bb98da1dfcd957f802920b4b1d9d9fb8 was so good that it could identify even the weak coincidence peaks, (I think it out-performed the mathematically possible limit, at the cost of giving too many false positives). However, it also underperformed in terms of background level estimation; and I don't want my spectrum cluttered up with coincidence peaks. So I upgraded it to the current (commit 523ad9297f91d554baee62fef7cfc5ff414ce625) mathematically more rigorous version.
