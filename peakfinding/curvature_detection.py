@@ -234,7 +234,7 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         L = len(self.counts)
         if not hasattr(self, "raw_noise_floor"):
             # print("Finding the raw_noise_floor values...")
-            is_noise = self.get_peakiness(window_size_multiplier=1.0) <= pvalue_for_noise
+            is_noise = self.get_peakiness(window_size_multiplier=4) <= pvalue_for_noise
             peaks_replaced_by_nans = np.where(is_noise, self.counts, np.nan)
             self.raw_noise_floor = peaks_replaced_by_nans
         """
@@ -271,7 +271,7 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         assert np.isfinite(noise_floor).all()
         return self.noise_floor
 
-    def infer_peakiness_from_background(self, negative_deviation_dilution_factor=0.0):
+    def infer_peakiness_from_background(self, bg_evaluation_window_size=1.0, negative_deviation_dilution_factor=0.0):
         """
         For each bin, determine the window size, and call that 'n'.
         Then, search left and right of that window for the first n noise values on each side.
@@ -287,7 +287,7 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         if not hasattr(self, "peakiness_from_bg_noise"):
             peakiness_from_bg_noise = []
             self.determine_noise_floor()
-            peak_windows = self.get_windows(width_multiplier=1.0)
+            peak_windows = self.get_windows(width_multiplier=bg_evaluation_window_size)
 
             print("Calculating peakiness_from_bg_noise...")
             for peak_bins, bg_level in tqdm(zip(peak_windows, self.noise_floor), total=peak_windows.shape[0]):
@@ -339,7 +339,11 @@ class RealSpectrumPeakFinder(RealSpectrumCurvature):
         return ax
 
 class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumLikelihoodWithNoiseFlooring):
-    def peak_identifier(self, curvature_threshold=-4.0, peakiness_threshold=0.9, negative_deviation_dilution_factor=0.0):
+    def peak_identifier(self,
+                        curvature_threshold=-4.0,
+                        peakiness_threshold=0.9,
+                        bg_evaluation_window_size=1.0, # try 1.5
+                        ):
         """
         curvature_threshold is only used for deciding where the peak tips lie.
         peakiness_threshold decides region of interest: any part of the spectrum with self.peakiness_from_bg_noise above peakiness_threshold is considered a ROI(region of interest)
@@ -354,7 +358,10 @@ class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumL
                 Note the right-hand-side-exclusive nature of python indexing. This forces r_index to be larger than the index of the right-most value by 1.
         """
         curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
-        peakiness_from_bg_noise = self.infer_peakiness_from_background(negative_deviation_dilution_factor=negative_deviation_dilution_factor)
+        peakiness_from_bg_noise = self.infer_peakiness_from_background(
+            bg_evaluation_window_size=bg_evaluation_window_size,
+            negative_deviation_dilution_factor=0.0
+            )
 
         # use curvature to decide where are the peak tips
         curvature_vector = self.calculate_sqrt_curvature()

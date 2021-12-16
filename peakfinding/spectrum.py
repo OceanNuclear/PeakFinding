@@ -439,8 +439,8 @@ class RealSpectrum(Histogram):
             f.write(_format_IEC_line("     peakfinding   1   1     0"))
             # live, real time and number of channels
             f.write(_format_IEC_line("{:14}{:14}{:6}".format(
-                self.__dict__.get("live_time", np.nan),
-                self.__dict__.get("wall_time", np.nan),
+                round(self.__dict__.get("live_time", np.nan), 6),
+                round(self.__dict__.get("wall_time", np.nan), 6),
                 len(self.counts)
                 ))
             )
@@ -510,6 +510,9 @@ class RealSpectrumInteractive(RealSpectrum):
     def __init__(self, counts, bound_units, live_time, **init_dict):
         super().__init__(counts, bound_units, live_time, **init_dict)
         self._clicked_and_dragged = []
+        self._is_drawing_line = True
+        self._annotations = []
+        self._ruler_lines = []
 
     def show_log_scale(self, ax=None, execute_before_showing=None, **kwargs):
         """
@@ -527,7 +530,7 @@ class RealSpectrumInteractive(RealSpectrum):
         if callable(execute_before_showing): # if this is a function
             execute_before_showing()
         self._setup_fig(ax.figure, False)
-        plt.show(block=False)
+        plt.show()
         self._teardown_fig()
         return
 
@@ -562,7 +565,7 @@ class RealSpectrumInteractive(RealSpectrum):
         if callable(execute_before_showing): # if this is a function
             execute_before_showing()        
         self._setup_fig(ax.figure, True)
-        plt.show(block=False)
+        plt.show()
         self._teardown_fig()
         return
 
@@ -608,11 +611,40 @@ class RealSpectrumInteractive(RealSpectrum):
             is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
 
             if is_cursor:
-                if (len(self._clicked_and_dragged)%2)==1:
-                    # odd number of entries in the _clicked_and_dragged list means the press-down event for the same button click happened within bounds.
+                if (len(self._clicked_and_dragged)%2)==1 and ax:
+                    # if the clicked and release both happened within a valid region:
                     print("released at x={}, y={}".format(event.xdata, event.ydata))
                     self._clicked_and_dragged.append([event.xdata, event.ydata])
-                print() # print an empty line to signal to the user that the click has finished and is detected, even if it's not within bounds.
+
+                    if self._is_drawing_line:
+                        y2 = self._clicked_and_dragged.pop()[1]
+                        y1 = self._clicked_and_dragged.pop()[1]
+                        base, top = sorted([y1, y2])
+                        half_max = base + np.sqrt(1/2)*(top-base)
+                        x1, x2 = ax.get_xlim()
+                        xspan, xmean = abs(np.diff([x1, x2])[0]), np.mean([x1, x2])
+                        self._annotations.append(ax.annotate("base", [xmean, base], va="bottom"))
+                        self._annotations.append(ax.annotate("Half-maximum", [xmean, half_max], va="center"))
+                        self._annotations.append(ax.annotate("tip", [xmean, top], va="top"))
+                        self._annotations.extend(ax.plot([xmean-xspan*0.45, xmean+xspan*0.45],
+                                                np.repeat([base, half_max, top], 2).reshape([3,2]).T,
+                                                color='black'))
+
+                        self.fig.canvas.draw()
+                        print(xmean-xspan*0.3, xmean+xspan*0.3, base, half_max, top)
+                        print("Reference line drawn. Datapoints not used.")
+                    else:
+                        while self._annotations:
+                            self._annotations.pop().remove()
+                        self.fig.canvas.draw()
+
+                elif (len(self._clicked_and_dragged)%2)==1:
+                    self._clicked_and_dragged.pop()
+                    print("Click-and-dragged across an invalid region; data-point dropped.")
+
+                self._is_drawing_line = not self._is_drawing_line # negate the current state.
+                print() # print an empty line to feedback to the user that the click has finished and is detected, even if it's not within bounds.
+
             elif is_zoom_pan:
                 # If the click was started within the axes
                 if sqrt_scale:
@@ -746,7 +778,7 @@ class RealSpectrumInteractive(RealSpectrum):
             self._clicked_and_dragged = [] # clear the list
             print("\nPlease click and drag across at least one peak:")
             ax = plt.subplot()
-            ax.set_title("Drag cursor across 1 or 2 peaks (left to right)")
+            ax.set_title("Drag cursor across the FWHM lines of a few peaks \n(tip: The 50% height in lin-scale = 70.7% height in sqrt scale.)")
             getattr(self, "show_{}_scale".format(plot_scale))(ax=ax)
             x_coordinates = ary(self._clicked_and_dragged, dtype=float).reshape([-1,2])[:, 0] # select the x coordinates
             mouse_press_down_up_pair = x_coordinates.reshape([-1, 2])
@@ -754,7 +786,7 @@ class RealSpectrumInteractive(RealSpectrum):
             
             # isfinite handle the cases that we don't have enough
             if len(valid_x_coords)==0:
-                print("Not enough/invalid peaks selected! Please try again:")
+                print("Not enough/invalid peaks selected! Please restart:")
             else:
                 break # exit the loop
 
