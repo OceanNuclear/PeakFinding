@@ -115,7 +115,7 @@ class RealSpectrum(Histogram):
         """
         Add two spectra together, bin-to-bin.
         """
-        warnings.warn("Adding spectra together.\nMake sure you don't repeat the same spectrum, and add chronologically left-to-right.", UserWarning)
+        warnings.warn("Adding spectra together.\nMake sure that your spectra are added chronologically (spec_day1 + spec_day2 + spec_day3 +...).", UserWarning)
         init_dict = rs2.__dict__.copy() 
         init_dict.update(self.__dict__) # overwrite with properties of self whenever there's a duplication.
         # do not update these three default parameters
