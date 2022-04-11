@@ -43,5 +43,27 @@ A peak detection-algorithm was derived based on the Poisson-ian nature of the pa
 
 ![Peak detection explanation figure](media/decision_explanation.png "An output of decision_explanation.py")
 
+## Adding together multiple spectra
+The `__add__` operator for the RealSpectrum has been overloaded to allow adding of spectra.
+```python
+from peakfinding.spectrum import RealSpectrum
+spec1 = RealSpectrum.from_Spe("Cu_01.Spe")
+spec2 = RealSpectrum.from_Spe("Cu_02.Spe")
+spec3 = RealSpectrum.from_Spe("Cu_03.Spe")
+summed_spec = spec0 + spec1 + spec2
+```
+Let's say you have three spectra: `Cu_01.Spe` (acquired from 11:00-11:05), `Cu_02.Spe` (acquired from 11:05-11:10), `Cu_03.Spe`(acquired from 11:10-11:15).
+In this situation, it's natural to want to know the summed spectrum as if you had a single spectrum spanning 11:00 - 11:15.
+
+To do this, you can use the following snippet:
+```python
+summed_spec = RealSpectrum.from_multiple_files("Cu_01.Spe", "Cu_02.Spe", "Cu_03.Spe")
+```
+
+If you're familiar with unix command line interfaces, you generate a new file using
+```bash
+python user_scripts/merge_spe.Spe Cu_0*.Spe output.Spe
+```
+
 ## Advanced usage
 For reference, commit c726c8b1bb98da1dfcd957f802920b4b1d9d9fb8 was so good that it could identify even the weak coincidence peaks, (I think it out-performed the mathematically possible limit, at the cost of giving too many false positives). However, it also underperformed in terms of background level estimation; and I don't want my spectrum cluttered up with coincidence peaks. So I upgraded it to the current (commit 523ad9297f91d554baee62fef7cfc5ff414ce625) mathematically more rigorous version.
