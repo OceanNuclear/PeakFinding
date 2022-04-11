@@ -716,7 +716,7 @@ class RealSpectrumInteractive(RealSpectrum):
         Paramters (all are float scalars)
         ---------
         peak_min1: left side of the first peak
-        peak_min2: right side of the first peak
+        peak_max1: right side of the first peak
         other_peaks_minmax: if provided, expands to the left and right sides of the second (or more) peak(s).
 
         Returns

@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import curve_fit
+# TODO: Write a class that encapulates the functionality of /home/ocean/Documents/PhD/ExperimentalVerification/analysis/get_peaks.py
 
 def fit_peaks(x_values, y_values, guess_peak_centroids, guess_sigma_values):
     """
@@ -41,19 +42,21 @@ def fit_peaks(x_values, y_values, guess_peak_centroids, guess_sigma_values):
         upper_limits.append( (centroid+guess_peak_centroids[i+1])/2 if (i+1)<num_peaks else max(x_values) )
         guess_peak_params.append(sigma)
         lower_limits.append(min(guess_sigma_values)/2)
-        upper_limits.append(max(guess_sigma_values)*1.5)
+        upper_limits.append(max(guess_sigma_values)*1.5*2) # account for unexpectedly wide peaks this way, e.g. the 511 keV peak.
 
     popt, pcov = curve_fit(
                     multiple_gaussians_with_bg,
                     x_values,
                     y_values,
-                    sigma=np.sqrt(y_values), # Note: This sigma refers to "how much the fit is allowed to vertically deviate from the data",
+                    sigma=np.clip(np.sqrt(y_values), 0.5, None),
+                    # Note: This sigma refers to "how much the fit is allowed to vertically deviate from the data",
                     # and is different from the sigma used everywhere else in this program to describe the width of the peaks.
+                    # The np.clip is used to make sure it doesn't reach 0, since sigma->0 leads to infinite chi2 curvature which cannot be optimized.
                     p0=[level, slope, *guess_peak_params],
                     bounds=(lower_limits, upper_limits),
                     method='trf', # default optimization algorithm for bounded problem. Can change to 'dogbox' to see how it performs.
                     )
-    return popt
+    return popt, pcov
 
 def multiple_gaussians_with_bg(x, bg_level, bg_slope, *peak_params):
     """

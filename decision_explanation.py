@@ -48,21 +48,21 @@ if OLD_DEMONSTRATION:
 
     # curvature (ax_m)
     default_threshold_func = threshold_curve_function_generator(curvature_threshold.default, *spectrum.fwhm_cal)
-    ax_m.plot(spectrum.boundaries.flatten(), default_threshold_func(spectrum.boundaries.flatten()), label="threshold 1")
-    ax_m.plot(spectrum.boundaries.flatten(), np.repeat(curvature_values, 2))
+    ax_m.plot(spectrum.boundaries().flatten(), default_threshold_func(spectrum.boundaries().flatten()), label="threshold 1")
+    ax_m.plot(spectrum.boundaries().flatten(), np.repeat(curvature_values, 2))
     new_threshold_func = threshold_curve_function_generator(-1.5, *spectrum.fwhm_cal)
-    ax_m.plot(spectrum.boundaries.flatten(), new_threshold_func(spectrum.boundaries.flatten()), label="threshold 2", color="C3")
+    ax_m.plot(spectrum.boundaries().flatten(), new_threshold_func(spectrum.boundaries().flatten()), label="threshold 2", color="C3")
     ax_m.legend()
     ax_m.set_ylim(-5, -0.1)
     ax_m.set_title("Curvatrue")
 
     # peakiness (ax_l)
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(peakiness_threshold.default, len(spectrum.boundaries.flatten())), label="threshold")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(mean_peakiness, 2), label="self-peakiness mean values")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(true_peakiness3, 2), label="true peakiness (3) values")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(true_peakiness425, 2), label="true peakiness (4.25) values")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(max_peakiness, 2), label="self-peakiness max values")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(0.6, len(spectrum.boundaries.flatten())), label="threshold for max")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(peakiness_threshold.default, len(spectrum.boundaries().flatten())), label="threshold")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(mean_peakiness, 2), label="self-peakiness mean values")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(true_peakiness3, 2), label="true peakiness (3) values")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(true_peakiness425, 2), label="true peakiness (4.25) values")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(max_peakiness, 2), label="self-peakiness max values")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(0.6, len(spectrum.boundaries().flatten())), label="threshold for max")
     ax_l.set_title("Peakiness")
     ax_l.legend()
 
@@ -79,8 +79,8 @@ else:
     # actual spectrum plot (ax_u)
     spectrum.plot_sqrt_scale(ax=ax_u)
     spectrum.determine_noise_floor()
-    ax_u.plot(spectrum.boundaries.flatten(), np.repeat(np.sqrt(spectrum.raw_noise_floor), 2), label="raw_noise_floor")
-    ax_u.plot(spectrum.boundaries.flatten(), np.repeat(np.sqrt(spectrum.noise_floor), 2), label="noise_floor")
+    ax_u.plot(spectrum.boundaries().flatten(), np.repeat(np.sqrt(spectrum.raw_noise_floor), 2), label="raw_noise_floor")
+    ax_u.plot(spectrum.boundaries().flatten(), np.repeat(np.sqrt(spectrum.noise_floor), 2), label="noise_floor")
     spectrum.highlight_peaks(ax_u, spectrum.peak_identifier(), alpha=0.6)
     ax_u.legend()
     # spectrum.highlight_peaks(ax_u, spectrum.faster_peak_identifier(), color="C2", alpha=0.5)
@@ -88,8 +88,8 @@ else:
 
     # curvature plot (ax_m)
     default_threshold_func = threshold_curve_function_generator(curvature_threshold.default, *spectrum.fwhm_cal)
-    ax_m.plot(spectrum.boundaries.flatten(), default_threshold_func(spectrum.boundaries.flatten()), label="default_threshold_func")
-    ax_m.plot(spectrum.boundaries.flatten(), np.repeat(curvature_values, 2))
+    ax_m.plot(spectrum.boundaries().flatten(), default_threshold_func(spectrum.boundaries().flatten()), label="default_threshold_func")
+    ax_m.plot(spectrum.boundaries().flatten(), np.repeat(curvature_values, 2))
     ax_m.legend()
     ax_m.set_ylim(-5, -0.1)
     ax_m.set_title("Curvatrue")
@@ -106,24 +106,24 @@ else:
     exclusive_peakiness_0 = spectrum.peakiness_from_bg_noise.copy()
     del spectrum.peakiness_from_bg_noise
 
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(spectrum.peakiness, 2), label="probability of being not noise")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(exclusive_peakiness_default, 2), label="exclusive_peakiness_default")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(exclusive_peakiness_05, 2), label="exclusive_peakiness_suppressed_05")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(exclusive_peakiness_0, 2), label="exclusive_peakiness_suppressed_0")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(spectrum.peakiness, 2), label="probability of being not noise")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(exclusive_peakiness_default, 2), label="exclusive_peakiness_default")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(exclusive_peakiness_05, 2), label="exclusive_peakiness_suppressed_05")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(exclusive_peakiness_0, 2), label="exclusive_peakiness_suppressed_0")
     # if hasattr(spectrum, "peakiness"): del spectrum.peakiness
     # true_peakiness2 = spectrum.get_peakiness(2.0).copy()
-    # ax_l.plot(spectrum.boundaries.flatten(), np.repeat(true_peakiness2, 2), label="true peakiness (3) values")
+    # ax_l.plot(spectrum.boundaries().flatten(), np.repeat(true_peakiness2, 2), label="true peakiness (3) values")
 
     # if hasattr(spectrum, "peakiness"): del spectrum.peakiness
     # true_peakiness3 = spectrum.get_peakiness(3.0).copy()
-    # ax_l.plot(spectrum.boundaries.flatten(), np.repeat(true_peakiness3, 2), label="true peakiness (3) values")
+    # ax_l.plot(spectrum.boundaries().flatten(), np.repeat(true_peakiness3, 2), label="true peakiness (3) values")
 
     # if hasattr(spectrum, "peakiness"): del spectrum.peakiness
     # true_peakiness425 = spectrum.get_peakiness(4.25).copy()
-    # ax_l.plot(spectrum.boundaries.flatten(), np.repeat(true_peakiness425, 2), label="true peakiness (4.25) values")
+    # ax_l.plot(spectrum.boundaries().flatten(), np.repeat(true_peakiness425, 2), label="true peakiness (4.25) values")
 
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(0.5, len(spectrum.boundaries.flatten())), label="threshold = 0.5")
-    ax_l.plot(spectrum.boundaries.flatten(), np.repeat(peakiness_threshold.default, len(spectrum.boundaries.flatten())), label="default peakiness threshold relative to the background.")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(0.5, len(spectrum.boundaries().flatten())), label="threshold = 0.5")
+    ax_l.plot(spectrum.boundaries().flatten(), np.repeat(peakiness_threshold.default, len(spectrum.boundaries().flatten())), label="default peakiness threshold relative to the background.")
     ax_l.set_title("Peakiness")
     ax_l.legend()
 
