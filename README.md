@@ -60,7 +60,7 @@ To do this, you can use the following snippet:
 summed_spec = RealSpectrum.from_multiple_files("Cu_01.Spe", "Cu_02.Spe", "Cu_03.Spe")
 ```
 
-If you're familiar with unix command line interfaces, you generate a new file using
+If you're familiar with unix command line interfaces, you can generate the summed Spe file using
 ```bash
 python user_scripts/merge_spe.Spe Cu_0*.Spe output.Spe
 ```
