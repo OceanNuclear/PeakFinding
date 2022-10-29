@@ -137,8 +137,11 @@ class RealSpectrum(Histogram):
             else:
                 init_dict["date_end_mea"] = None
         if "wall_time" in init_dict.keys():
-            if hasattr(self, "wall_time") and hasattr(rs2, "wall_time"):
-                init_dict["wall_time"] = self.wall_time + rs2.wall_time
+            if [hasattr(self, "wall_time"), hasattr(rs2, "wall_time"), hasattr(self, "date_mea"), hasattr(rs2, "date_mea")]:
+                # init_dict["wall_time"] = self.wall_time + rs2.wall_time # this is obsolete.
+                # to account for gaps between spectra (e.g. due to the software finite amount of time to save the previous spectrum and start the next acquisition)
+                end_time = rs2.date_mea + dt.timedelta(seconds=rs2.wall_time)
+                init_dict["wall_time"] = (end_time - self.date_mea).total_seconds()
 
         return self.__class__(sum_counts, self.bound_units, sum_live_time, **init_dict)
 
