@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import numpy as np
 from numpy import array as ary
 from matplotlib import pyplot as plt
-from matplotlib import ticker as ticker
 
 __all__ = ["Histogram", "TimeSeries", "RealSpectrum", "RealSpectrumInteractive"]
 
@@ -45,28 +44,38 @@ class Histogram():
         arange = ary([np.arange(len(self.counts)), np.arange(1, len(self.counts)+1)]).T
         return arange
 
-    def plot_log_scale(self, ax=None, **kwargs):
-        if not ax:
+    def plot_in_scale(self, scale, ax=None, **kwargs):
+        """Plot in a certain specified scale.
+
+        Parameters
+        ----------
+        scale: Union[str, matplotlib.scale.ScaleBase]
+            can take the value of
+            - str: {'sqrt', 'linear', 'log', 'symlog', 'logit'}
+            - matplotlib.scale.ScaleBase: refer to its documentation.
+        ax: matplotlib.axes._subplots.AxesSubplot
+        kwargs: dictionary of paramters to be parsed onto ax.plot
+        """
+        if not ax: # create an axis object if None is provide.
             ax = plt.subplot()
-        line, = ax.semilogy(self.boundaries().flatten(), np.repeat(self.counts, 2), **kwargs)
+
+        if scale=="sqrt":
+            ax.set_yscale('function', functions=[lambda x: np.sign(x)*np.sqrt(np.abs(x)), lambda x: np.sign(x)*np.square(np.abs(x))])
+        else:
+            ax.set_yscale(scale)
+        line, = ax.plot(self.boundaries().flatten(), np.repeat(self.counts, 2), **kwargs)
         ax.set_xlabel(self.bound_units)
         ax.set_ylabel("counts")
         return ax, line
         
-    def plot_sqrt_scale(self, ax=None, rewrite_yticks=False, **kwargs):
-        if not ax:
-            ax = plt.subplot()
-        transformed_cnts = np.sqrt(self.counts)
-        line, = ax.plot(self.boundaries().flatten(), np.repeat(transformed_cnts, 2), **kwargs)
-        ax.set_xlabel(self.bound_units)
-        # y labelling
-        if rewrite_yticks:
-            ax.set_ylabel("counts")
-            old_yticks = ax.get_yticks()
-            ax.set_yticklabels(np.sign(old_yticks) * old_yticks**2)
-        else:
-            ax.set_ylabel("sqrt(counts)")
-        return ax, line
+    def plot_sqrt_scale(self, ax=None, **kwargs):
+        """An alias for calling self.plot_in_scale('sqrt', ...)"""
+        return self.plot_in_scale('sqrt', ax=ax, **kwargs)
+
+    def plot_log_scale(self, ax=None, **kwargs):
+        """An alias for self.plot_in_scale('log', ...)"""
+        return self.plot_in_scale('log', ax=ax, **kwargs)
+
 
 class TimeSeries(Histogram):
     def __init__(self, counts, boundaries, bound_units):
@@ -513,39 +522,16 @@ class RealSpectrumInteractive(RealSpectrum):
     def __init__(self, counts, bound_units, live_time, **init_dict):
         super().__init__(counts, bound_units, live_time, **init_dict)
         self._clicked_and_dragged = []
-        self._is_drawing_line = True
-        self._annotations = []
-        self._ruler_lines = []
 
-    def show_log_scale(self, ax=None, execute_before_showing=None, **kwargs):
-        """
-        Parameters
-        ----------
-        ax : an optional matpotlib axes object to draw over
-        execute_before_showing : a function to execute before showing.
-                                must have no calls ignature of NO parameters.
-        Returns
-        -------
-        nothing, as this method only returns when we close the plot
-        """
-        ax, line = super().plot_log_scale(ax=ax, **kwargs)
-
-        if callable(execute_before_showing): # if this is a function
-            execute_before_showing()
-        self._setup_fig(ax.figure, False)
-        plt.show()
-        self._teardown_fig()
-        return
-
-    def show_sqrt_scale(self, ax=None, execute_before_showing=None, **kwargs):
+    def show_in_scale(self, scale, ax=None, execute_before_showing=None, **kwargs):
         """
         Connect button clicks on the plot to other useful stuff.
         Parameters
         ----------
         ax : an optional matpotlib axes object to draw over
         execute_before_showing : a function to execute before showing.
-                                must have no calls ignature of NO parameters.
-        an example execute_before_showing function is as follows:
+                                must have a call signature of NO parameters.
+            an example execute_before_showing function is as follows:
             def func():
                 ax.set_title("Some title")
                 ax.plot([-1, 1000], [0.9, 0.9])
@@ -553,24 +539,23 @@ class RealSpectrumInteractive(RealSpectrum):
 
         Returns
         -------
-        nothing, as this method only returns when we close the plot.
+        None, as this method only returns when we close the plot.
         """
 
-        ax, line = super().plot_sqrt_scale(ax=ax, rewrite_yticks=False, **kwargs)
-
-        # functionality specific to sqrt_scale
-        self.fig = ax.figure
-        ax.set_ylabel("counts")
-        yticks = round_to_nearest_sq_int(ax.get_yticks())
-        ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-        ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
+        ax, line = super().plot_in_scale(scale, ax=ax, **kwargs)
 
         if callable(execute_before_showing): # if this is a function
-            execute_before_showing()        
-        self._setup_fig(ax.figure, True)
+            execute_before_showing()
+        self._setup_fig(ax.figure)
         plt.show()
         self._teardown_fig()
         return
+
+    def show_sqrt_scale(self, ax=None, execute_before_showing=None, **kwargs):
+        return self.show_in_scale('sqrt', ax=ax, execute_before_showing=execute_before_showing, **kwargs)
+
+    def show_log_scale(self, ax=None, execute_before_showing=None, **kwargs):
+        self.show_in_scale('log', ax=ax, execute_before_showing=execute_before_showing, **kwargs)
 
     def _on_press(self, event):
         """
@@ -585,95 +570,98 @@ class RealSpectrumInteractive(RealSpectrum):
         # while the former version of which denotes cursor state as toolbar._active=None.
         is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
 
-        if is_cursor:
-            if event.inaxes:
-                # print and store the within-bound clicks
-                print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
-                self._clicked_and_dragged.append([event.xdata, event.ydata])
-        elif is_zoom_pan:
-            # store the axis where the press-down event happened
-            self._event_ax = event.inaxes
+        if is_cursor and event.inaxes:
+            # print and store the within-bound clicks
+            print("pressed down at x={}, y={}".format(event.xdata, event.ydata))
+            self._clicked_and_dragged.append([event.xdata, event.ydata])
         return event
 
-    def _on_release_callback_function_generator(self, sqrt_scale):
+    def _on_release_callback_function_generator(self):
         """
-        Function factory, creates an _on_release function which is complementary to _on_press.
+        Function factory, creates an _on_release() function which is complementary to _on_press.
         """
         def _on_release(event):
             """
-            Rewrite y-axis upon self.event if it's a zoom/pan event.
+            Upon release of cursor: if within bounds and all values are valid:
+                1. Annotate the correct places if self._is_drawing_T_lines is true,
+                    otherwise delete the previous annotations.
+                2. negate self._is_drawing_T_lines
             Minor issue may arise if the user decides to begin the click from within bounds, 
                 but then release the click from out-of-bounds.
                 This means a [None, None] will be recorded as the location of the release event,
                 which will get translated into float(nan).
                 This will lead to the function being unable to fit the values.
+
             """
-            ax = event.inaxes
+            ax = inaxes = event.inaxes
             canvas = event.canvas
             toolbar = canvas.manager.toolbar
             is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
 
-            if is_cursor:
-                if (len(self._clicked_and_dragged)%2)==1 and ax:
-                    # if the clicked and release both happened within a valid region:
-                    print("released at x={}, y={}".format(event.xdata, event.ydata))
-                    self._clicked_and_dragged.append([event.xdata, event.ydata])
+            # first 3 if-conditions are to screen away unwanted events.
+            if is_zoom_pan:
+                return event
+            if (len(self._clicked_and_dragged)%2)==0:
+                print("Mouse click started in an invalid region; data-points pair discarded.\n")
+                return event # do not append point
+            if not inaxes:
+                print("Mouse released in an invalid region; data-points pair discarded.\n")
+                self._clicked_and_dragged.pop()
+                return event
 
-                    if self._is_drawing_line:
-                        y2 = self._clicked_and_dragged.pop()[1]
-                        y1 = self._clicked_and_dragged.pop()[1]
-                        base, top = sorted([y1, y2])
-                        half_max = base + np.sqrt(1/2)*(top-base)
-                        x1, x2 = ax.get_xlim()
-                        xspan, xmean = abs(np.diff([x1, x2])[0]), np.mean([x1, x2])
-                        self._annotations.append(ax.annotate("base", [xmean, base], va="bottom"))
-                        self._annotations.append(ax.annotate("Half-maximum", [xmean, half_max], va="center"))
-                        self._annotations.append(ax.annotate("tip", [xmean, top], va="top"))
-                        self._annotations.extend(ax.plot([xmean-xspan*0.45, xmean+xspan*0.45],
-                                                np.repeat([base, half_max, top], 2).reshape([3,2]).T,
-                                                color='black'))
+            # if the clicked and release both happened within a valid region:
+            print("released at x={}, y={}".format(event.xdata, event.ydata))
+            self._clicked_and_dragged.append([event.xdata, event.ydata])
 
-                        self.fig.canvas.draw()
-                        print(xmean-xspan*0.3, xmean+xspan*0.3, base, half_max, top)
-                        print("Reference line drawn. Datapoints not used.")
-                    else:
-                        while self._annotations:
-                            self._annotations.pop().remove()
-                        self.fig.canvas.draw()
+            if self._is_drawing_T_lines:
+                y2 = self._clicked_and_dragged.pop()[1]
+                y1 = self._clicked_and_dragged.pop()[1]
+                base, top = sorted([y1, y2])
+                half_max = np.mean([base, top])
+                x1, x2 = ax.get_xlim()
+                xspan, xmean = abs(np.diff([x1, x2])[0]), np.mean([x1, x2])
+                self._annotations.append(ax.annotate("base", [xmean, base], va="bottom"))
+                self._annotations.append(ax.annotate("Half-maximum", [xmean, half_max], va="center"))
+                self._annotations.append(ax.annotate("tip", [xmean, top], va="top"))
+                self._annotations.extend(ax.plot([xmean-xspan*0.45, xmean+xspan*0.45],
+                                        np.repeat([base, half_max, top], 2).reshape([3,2]).T,
+                                        color='black'))
+                self.fig.canvas.draw()
+                print(f"{base=}, {half_max=}, {top=}")
+                print("Reference line drawn. Data-points pair won't be used.\n")
+                self._is_drawing_T_lines = False
 
-                elif (len(self._clicked_and_dragged)%2)==1:
-                    self._clicked_and_dragged.pop()
-                    print("Click-and-dragged across an invalid region; data-point dropped.")
+            else:
+                while self._annotations:
+                    self._annotations.pop().remove()
+                self.fig.canvas.draw() # wipe the canvas of annotations
+                x_coords = sorted(ary(self._clicked_and_dragged[-2:])[:, 0])
+                print(f"x_left={x_coords[0]}, x_right={x_coords[1]}")
+                print("Data-points pair recorded.\n")
+                self._is_drawing_T_lines = True
 
-                self._is_drawing_line = not self._is_drawing_line # negate the current state.
-                print() # print an empty line to feedback to the user that the click has finished and is detected, even if it's not within bounds.
-
-            elif is_zoom_pan:
-                # If the click was started within the axes
-                if sqrt_scale:
-                    # calculate the y-ticks location and un-sqrt their values.
-                    ylim = self._event_ax.get_ylim()
-                    ylim_range = np.diff(ylim)[0]
-                    yticks = np.linspace(ylim[0]+ylim_range*0.02, ylim[1]-ylim_range*0.02, 10)
-                    yticks = round_to_nearest_sq_int(yticks)
-                    self._event_ax.set_yticks(yticks)
-                    self._event_ax.set_yticklabels("{:d}".format(int(np.round(i))) for i in np.sign(yticks)*(yticks)**2)
-                delattr(self, "_event_ax")
             return event
+
         return _on_release
 
-    def _setup_fig(self, fig, sqrt_scale=False):
+    def _setup_fig(self, fig):
+        """If started figure in drawing_mode,
+        then we create a container self._annotations to contain all the newly drawn lines and words."""
         self.fig = fig
+        self._annotations = []
+        self._is_drawing_T_lines = True
         self.on_press_connection = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
-        _on_release = self._on_release_callback_function_generator(sqrt_scale)
+        _on_release = self._on_release_callback_function_generator()
         self.on_release_connection = self.fig.canvas.mpl_connect("button_release_event", _on_release)
 
     def _teardown_fig(self):
         self.fig.canvas.mpl_disconnect(self.on_press_connection)
         self.fig.canvas.mpl_disconnect(self.on_release_connection)
         delattr(self, "fig")
-        delattr(self, "on_press_connection")
-        delattr(self, "on_release_connection")
+        delattr(self, "on_press_connection") # disconnect figure
+        delattr(self, "on_release_connection") # disconnect figure
+        delattr(self, "_annotations")
+        delattr(self, "_is_drawing_T_lines")
 
     def __del__(self):
         if hasattr(self, "fig"):
@@ -766,14 +754,17 @@ class RealSpectrumInteractive(RealSpectrum):
         width_at_E = np.sqrt(inside_sqrt_func(E))
         return width_at_E
 
-    def fit_fwhm_cal_interactively(self, plot_scale="sqrt"):
+    def fit_fwhm_cal_interactively(self, scale="sqrt"):
         """
         Plot the spectrum on a matplotlib figure, on which the user can click and drag to define one or two peaks.
         If >2 clicks were detected, then only the last two will made.
 
         Paramters
         ---------
-        scale: scale to show the spectrum plot in. Options are: "sqrt" (default), "log".
+        scale: Union[str, matplotlib.scale.ScaleBase]
+            can take the value of
+            - str: {'sqrt', 'linear', 'log', 'symlog', 'logit'}
+            - matplotlib.scale.ScaleBase: refer to its documentation.
         """
         print("Click and drag across the peak(s) that you'd like to fit;")
         print("Only the last two click-and-dragged peaks will be used as the data.")
@@ -781,8 +772,8 @@ class RealSpectrumInteractive(RealSpectrum):
             self._clicked_and_dragged = [] # clear the list
             print("\nPlease click and drag across at least one peak:")
             ax = plt.subplot()
-            ax.set_title("Drag cursor across the FWHM lines of a few peaks \n(tip: The 50% height in lin-scale = 70.7% height in sqrt scale.)")
-            getattr(self, "show_{}_scale".format(plot_scale))(ax=ax)
+            ax.set_title("Drag cursor across the FWHM lines of a few peaks")
+            self.show_in_scale(scale, ax=ax)
             x_coordinates = ary(self._clicked_and_dragged, dtype=float).reshape([-1,2])[:, 0] # select the x coordinates
             mouse_press_down_up_pair = x_coordinates.reshape([-1, 2])
             valid_x_coords = mouse_press_down_up_pair[np.isfinite(mouse_press_down_up_pair).all(axis=1)]
@@ -830,14 +821,6 @@ def check_matplotlib_toolbar_tool_used(toolbar):
     # should only raise an error if check_matplotlib_toolbar_tool_used() is broken.
     assert (int(is_cursor) + int(is_zoom_pan)) == 1, "Expected the tool to either be cursor, pan, or zoom."
     return mpl_active_tool(is_cursor, is_zoom_pan)
-
-def round_to_nearest_sq_int(yticks):
-    rounded_values = np.round(yticks).astype(int)
-
-    sq_values = np.sign(yticks)*(yticks)**2
-    sq_rounded_values = np.round(sq_values)
-    sq_rounded_values_no_repeat = ary(sorted(set(sq_rounded_values)))
-    return np.sign(sq_rounded_values_no_repeat) * np.sqrt(abs(sq_rounded_values_no_repeat))
 
 def regex_num(line, dtype=int):
     import re

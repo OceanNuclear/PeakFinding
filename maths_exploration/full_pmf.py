@@ -6,7 +6,6 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import sys, os
 from scipy.special import factorial as fac
-from peakfinidng.sqrt_repr import plot_sqrt
 
 """
 Calculates the entire probability mass distribution function

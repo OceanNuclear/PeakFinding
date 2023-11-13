@@ -8,6 +8,7 @@ import sys, os
 from scipy.ndimage import filters, gaussian_filter1d
 from scipy import signal
 from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
+from peakfinding.spectrum import RealSpectrum
 
 if __name__=='__main__':
     """
@@ -19,10 +20,8 @@ if __name__=='__main__':
     REPLOT_TICKS = False
     
     WINDOW_WIDTHS = range(4, 40)
-    spectrum = pd.read_csv(sys.argv[1], index_col=[0]).values.T
-    E_l, E_u, counts = spectrum
-    counts = ary(counts, dtype=int)
-    E_bound = ary([E_l, E_u]).T
+    spectrum = RealSpectrum.from_multiple_files(*sys.argv[1:])
+    E_bound, counts = spectrum.boundaries(), spectrum.counts
 
     mid_E = E_bound.mean(axis=1)
 
