@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 from peakfinding.poisson_distribution import Poisson, Chi2
 from peakfinding.sqrt_repr import plot_sqrt
+from peakfinding.spectrum import RealSpectrum
 
 """
 Use a "voting" idea to decide which one of them is noise and which one isn't:
@@ -85,10 +86,8 @@ if __name__=='__main__':
     import pandas as pd
     import sys
     import seaborn as sns
-    spectrum = pd.read_csv(sys.argv[1], index_col=[0]).values.T
-    E_l, E_u, counts = spectrum
-    counts = ary(counts, dtype=int)
-    E_bound = ary([E_l, E_u]).T
+    spectrum = RealSpectrum.from_multiple_files(*sys.argv[1:])
+    E_bound, counts = spectrum.boundaries(), spectrum.counts
     transition_matrix = get_markov_matrix(counts, 21)
     
     window_width = 21
@@ -100,7 +99,7 @@ if __name__=='__main__':
     fig.suptitle("Markov Chain Peak identification")
     plot_sqrt(E_bound, counts, ax=ax_u)
 
-    with writer.saving(fig, "../Video/"+"Markov_chain.mp4", 300):
+    with writer.saving(fig, "../media/"+"Markov_chain.mp4", 300):
         markov_probability = np.ones(len(counts))
         for _ in range(30):
             ax_l.plot(E_bound.flatten(), np.repeat(markov_probability, 2))

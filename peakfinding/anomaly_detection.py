@@ -2,7 +2,6 @@ from numpy import array as ary
 import numpy as np
 from tqdm import tqdm
 
-from peakfinding.sqrt_repr import plot_sqrt # signature: (E, sqrt(counts), ax, rewrite_yticks)
 from peakfinding.poisson_distribution import PoissonFast, Normal, Chi2
 __all__ = ["SpectrumGoodnessOfFit"]
 
