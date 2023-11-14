@@ -4,6 +4,7 @@ from functools import reduce
 from operator import add as __add__
 from collections import OrderedDict, namedtuple
 from itertools import zip_longest
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import numpy as np
@@ -546,10 +547,18 @@ class RealSpectrumInteractive(RealSpectrum):
 
         if callable(execute_before_showing): # if this is a function
             execute_before_showing()
-        self._setup_fig(ax.figure)
-        plt.show()
-        self._teardown_fig()
-        return
+        with self._figure_management(ax.figure):
+            plt.show()
+
+    @contextmanager
+    def _figure_management(self, fig):
+        self._setup_fig(fig)
+        try:
+            yield
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self._teardown_fig()
 
     def show_sqrt_scale(self, ax=None, execute_before_showing=None, **kwargs):
         return self.show_in_scale('sqrt', ax=ax, execute_before_showing=execute_before_showing, **kwargs)
@@ -657,6 +666,7 @@ class RealSpectrumInteractive(RealSpectrum):
     def _teardown_fig(self):
         self.fig.canvas.mpl_disconnect(self.on_press_connection)
         self.fig.canvas.mpl_disconnect(self.on_release_connection)
+        plt.close()
         delattr(self, "fig")
         delattr(self, "on_press_connection") # disconnect figure
         delattr(self, "on_release_connection") # disconnect figure
@@ -664,6 +674,7 @@ class RealSpectrumInteractive(RealSpectrum):
         delattr(self, "_is_drawing_T_lines")
 
     def __del__(self):
+        """Try to teardown upon deletion."""
         if hasattr(self, "fig"):
             try:
                 self._teardown_fig()
