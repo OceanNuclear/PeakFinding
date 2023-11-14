@@ -3,6 +3,7 @@ import numpy as np
 from tqdm import tqdm
 
 from peakfinding.poisson_distribution import PoissonFast, Normal, Chi2
+
 __all__ = ["SpectrumGoodnessOfFit"]
 
 """
@@ -14,7 +15,8 @@ i.e. if part of a peak is included in this window, then this probability value s
     Therefore the program should be able to tell that it's unlikely to have such high negative log likelihood values for those bins.
 """
 
-class SpectrumGoodnessOfFit():
+
+class SpectrumGoodnessOfFit:
     def __init__(self, counts, window_width):
         """
         Calculates the contribution to the Poisson chi^2 when a window size of window_width is rolled across the counts array.
@@ -29,18 +31,27 @@ class SpectrumGoodnessOfFit():
         poisson_goodness_of_fit_full_stack : array of shape = (len(counts)-window_width+1, window_width)
         """
         self.window_width = window_width
-        self.chi2_cdf_converter = Chi2(window_width-1)
-        
+        self.chi2_cdf_converter = Chi2(window_width - 1)
+
         poisson_goodness_of_fit_full_stack = []
 
-        spread_stack = ary([ counts[i:len(counts)-window_width+1+i] for i in range(window_width)])
+        spread_stack = ary(
+            [
+                counts[i : len(counts) - window_width + 1 + i]
+                for i in range(window_width)
+            ]
+        )
         mean_stack = spread_stack.mean(axis=0)
 
-        for num_window, (samples, sample_mean) in tqdm(enumerate(zip(spread_stack.T, mean_stack)),
-                                                    total=len(counts)-window_width+1):
+        for num_window, (samples, sample_mean) in tqdm(
+            enumerate(zip(spread_stack.T, mean_stack)),
+            total=len(counts) - window_width + 1,
+        ):
             poisson_hypothesized = PoissonFast(sample_mean)
             # calculate the contribution to the poisson chi2 equivalent quantity.
-            poisson_chi2_components = poisson_hypothesized.negative_log_likelihood(samples)
+            poisson_chi2_components = poisson_hypothesized.negative_log_likelihood(
+                samples
+            )
             poisson_goodness_of_fit_full_stack.append(poisson_chi2_components)
         self._goodness_of_fit_values = ary(poisson_goodness_of_fit_full_stack).T
 
@@ -62,7 +73,7 @@ class SpectrumGoodnessOfFit():
         Experimental/beta way of calculating the probability of this being a peak itself. This seems to exaggerate the number quite a lot and allows for a
 
         Visual explanation of what the code is doing:
-        
+
         for a window_width = w, (_poisson_goodness_of_fit_raw_values).T gives an array as follows:
         [
             [GoF(0:w  , 0), GoF(1:w+1, 1), ...]
@@ -79,7 +90,7 @@ class SpectrumGoodnessOfFit():
             [               GoF(0:w  , 1), GoF(1:w+1, 2), ...]
             ...
         ]
-        
+
         and then vertically sum the w elements up in each column, so that that we can get the GoF(i:w+i, k) for the k-th bin.
         To handle the edge cases (leftmost w-1 and rightmost w-1), we have two approaches:
         1. Upscale the limited samples from <w to w. (by taking the aveage and then multiplying by w.)
@@ -92,11 +103,22 @@ class SpectrumGoodnessOfFit():
         -------
         a full sized array that matches shape with that of count
         """
-        nan_rectangle = np.full((self.window_width, self.window_width-1), np.nan) # shape = (window_width, window_width-1)
-        full_sized_goodness_of_fit = ary([np.insert(nans, ind, GoF_line) for ind, (nans, GoF_line) in enumerate(zip(nan_rectangle, self._goodness_of_fit_values))])
+        nan_rectangle = np.full(
+            (self.window_width, self.window_width - 1), np.nan
+        )  # shape = (window_width, window_width-1)
+        full_sized_goodness_of_fit = ary(
+            [
+                np.insert(nans, ind, GoF_line)
+                for ind, (nans, GoF_line) in enumerate(
+                    zip(nan_rectangle, self._goodness_of_fit_values)
+                )
+            ]
+        )
         return full_sized_goodness_of_fit
 
     def get_self_contributed_peakiness(self):
         full_sized_goodness_of_fit = self.get_self_contributed_goodness_of_fit()
-        goodness_of_fit_sum = np.nanmean(full_sized_goodness_of_fit, axis=0) * self.window_width
+        goodness_of_fit_sum = (
+            np.nanmean(full_sized_goodness_of_fit, axis=0) * self.window_width
+        )
         return self.chi2_cdf_converter.cdf(goodness_of_fit_sum)

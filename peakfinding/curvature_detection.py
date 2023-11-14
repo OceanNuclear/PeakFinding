@@ -5,6 +5,7 @@ from peakfinding.poisson_distribution import PoissonFast, Chi2List
 from tqdm import tqdm
 from collections import namedtuple
 import warnings
+
 """
 Only downside of this module:
 The following factors were haphazardly introduced (though not without reason):
@@ -21,16 +22,19 @@ TODO:
     - self.fitted_curvature
     And instead generate them on the fly whenever needed.
 """
-__all__ = ["RealSpectrumCurvature",
-            "threshold_curve_function_generator",
-            "RealSpectrumLikelihoodSimple",
-            "RealSpectrumLikelihoodWithNoiseFlooring",
-            "RealSpectrumPeakFinder",
-            "RealSpectrumPeakFinderFromNoiseFloor",
-            ]
+__all__ = [
+    "RealSpectrumCurvature",
+    "threshold_curve_function_generator",
+    "RealSpectrumLikelihoodSimple",
+    "RealSpectrumLikelihoodWithNoiseFlooring",
+    "RealSpectrumPeakFinder",
+    "RealSpectrumPeakFinderFromNoiseFloor",
+]
+
 
 def _first_n_notnan_val_of_array(array, n):
     return array[np.isfinite(array)][:n]
+
 
 def _bool_array_to_peak_indices(bool_array):
     """
@@ -43,24 +47,27 @@ def _bool_array_to_peak_indices(bool_array):
     array of shape (N,2) indicating start and end of N peaks.
     """
     # turn boolean array (obtained by applying the threshold) into index pairs indicating the start and end of peaks.
-    bool_array = ary([False]+list(bool_array)+[False], dtype=bool)
+    bool_array = ary([False] + list(bool_array) + [False], dtype=bool)
     # wrap it with False's so even if it starts/ends with True it'll be properly recorded
     peak_start_stops = np.diff(bool_array.astype(int))
-    peak_ledge_indices = np.argwhere(peak_start_stops==1).flatten()
-    peak_redge_indices = np.argwhere(peak_start_stops==-1).flatten()
-    
+    peak_ledge_indices = np.argwhere(peak_start_stops == 1).flatten()
+    peak_redge_indices = np.argwhere(peak_start_stops == -1).flatten()
+
     return ary([peak_ledge_indices, peak_redge_indices]).T
+
 
 class RealSpectrumWithChi2(RealSpectrumInteractive):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._Chi2_dists = Chi2List()
 
+
 class RealSpectrumCurvature(RealSpectrumWithChi2):
     """
     self.calculate_sqrt_curvature doesn't take much time.
     Therefore we don't save its output into self.curvature, and can keep the multiple inheritance class (RealSpectrumPeakFinder) below simple.
     """
+
     def _calculate_sqrt_curvature_chi2_and_probabilities(self):
         """
         (This method should only be used for debugging.)
@@ -82,24 +89,32 @@ class RealSpectrumCurvature(RealSpectrumWithChi2):
                 probability_of_having_such_chi2_or_less.append(np.nan)
             else:
                 # perform deg=2 polynomial fit on this window
-                results = np.polyfit(self.boundaries().mean(axis=1)[window], y[window], 2, full=True)
+                results = np.polyfit(
+                    self.boundaries().mean(axis=1)[window], y[window], 2, full=True
+                )
                 # unpack fit results
                 p2, p1, p0 = results[0]
                 residuals = results[1]
-                cdf_value = self._Chi2_dists[window.sum()-3].cdf(residuals) # 3 DoF removed because we're fitting 3 coefficients.
+                cdf_value = self._Chi2_dists[window.sum() - 3].cdf(
+                    residuals
+                )  # 3 DoF removed because we're fitting 3 coefficients.
 
                 # add into the lists created above
                 curvature_coef.append(p2)
                 chi2_values.append(residuals)
                 probability_of_having_such_chi2_or_less.append(cdf_value)
 
-        return ary(curvature_coef), ary(chi2_values), ary(probability_of_having_such_chi2_or_less)
+        return (
+            ary(curvature_coef),
+            ary(chi2_values),
+            ary(probability_of_having_such_chi2_or_less),
+        )
 
     # def get_sqrt curvature # get the other two coefficients too!
 
     def calculate_sqrt_curvature(self):
         """
-        Fit the sqrt counts 
+        Fit the sqrt counts
         """
         # create lists to contain for the following vectors
         y = sqrt(self.counts)
@@ -111,7 +126,9 @@ class RealSpectrumCurvature(RealSpectrumWithChi2):
                     curvature_coef.append(np.nan)
                 else:
                     # perform deg=2 polynomial fit on this window
-                    p2, p1, p0 = np.polyfit(self.boundaries().mean(axis=1)[window], y[window], 2, full=False)
+                    p2, p1, p0 = np.polyfit(
+                        self.boundaries().mean(axis=1)[window], y[window], 2, full=False
+                    )
 
                     # add these results to the final output
                     curvature_coef.append(p2)
@@ -119,7 +136,9 @@ class RealSpectrumCurvature(RealSpectrumWithChi2):
 
         return self.fitted_curvature
 
-    def apply_threshold_on_curvature(self, threshold=-2.5): # unit of threshold = counts (self.bound_units)^-2
+    def apply_threshold_on_curvature(
+        self, threshold=-2.5
+    ):  # unit of threshold = counts (self.bound_units)^-2
         """
         Identify peaks by claiming (regions with curvature <= threshold) == peaks.
 
@@ -149,8 +168,9 @@ class RealSpectrumCurvature(RealSpectrumWithChi2):
         # apply threshold on curvature datae
         threshold_function = threshold_curve_function_generator(threshold, *self.fwhm_cal)
         threshold_values = threshold_function(self.boundaries().mean(axis=1))
-        bool_array = curvature<=threshold_values
+        bool_array = curvature <= threshold_values
         return bool_array
+
 
 def threshold_curve_function_generator(numerator, *coeffs):
     """
@@ -165,11 +185,14 @@ def threshold_curve_function_generator(numerator, *coeffs):
         (independent of the gain of the amplifier,
         so the same numerator can be reused even if you've changed the amplifier gain).
     """
+
     def equation(E):
         denominator = ary([c * E**n for n, c in enumerate(coeffs)]).sum(axis=0)
 
-        return numerator/denominator
+        return numerator / denominator
+
     return equation
+
 
 class RealSpectrumLikelihoodSimple(RealSpectrumWithChi2):
     """
@@ -183,21 +206,25 @@ class RealSpectrumLikelihoodSimple(RealSpectrumWithChi2):
         """
         mean = np.mean(samples)
         # hypothesis
-        poisson_dist = PoissonFast(mean) # null hypothesis, i.e. hypothesized distribution
+        poisson_dist = PoissonFast(
+            mean
+        )  # null hypothesis, i.e. hypothesized distribution
         # perform p-value test, by calculating (1-pvalue):
         chi2 = poisson_dist.negative_log_likelihood(samples).sum()
 
-        chi2_distribution = self._Chi2_dists[len(samples)-1] # faster to call than to create own chi2 distributions
+        chi2_distribution = self._Chi2_dists[
+            len(samples) - 1
+        ]  # faster to call than to create own chi2 distributions
         # number of free parameters = 1; number of variables to fit = len(samples)
-        probability_not_noise = chi2_distribution.cdf(chi2) # this gives 1-pvalue
+        probability_not_noise = chi2_distribution.cdf(chi2)  # this gives 1-pvalue
 
         return probability_not_noise
 
     def get_peakiness(self, window_size_multiplier=1.0):
         """
         peakiness is a short form of 'Probability of this bin's count not being part of the Poisson distribution of neighbouring bins'.
-        Calculates the peakiness of the entire spectrum, 
-        one scalar for each bin, 
+        Calculates the peakiness of the entire spectrum,
+        one scalar for each bin,
         forming a vector of the same shape as the spectrum.
         """
         if not hasattr(self, "peakiness"):
@@ -206,25 +233,38 @@ class RealSpectrumLikelihoodSimple(RealSpectrumWithChi2):
 
             validation_windows = self.get_windows(width_multiplier=window_size_multiplier)
             diag_crossed_out = validation_windows.copy()
-            np.fill_diagonal(diag_crossed_out, False) # new method
-            for i, (v_wind, self_wind) in tqdm(enumerate(zip(validation_windows, diag_crossed_out)), total=len(validation_windows)):
+            np.fill_diagonal(diag_crossed_out, False)  # new method
+            for i, (v_wind, self_wind) in tqdm(
+                enumerate(zip(validation_windows, diag_crossed_out)),
+                total=len(validation_windows),
+            ):
                 # P(this window contains a Poisson distribution)
                 validation_samples = self.counts[v_wind]
-                Probability_is_not_poisson = self._Prob_slice_is_not_noise(validation_samples)
+                Probability_is_not_poisson = self._Prob_slice_is_not_noise(
+                    validation_samples
+                )
                 # P(this is a point in that poisson distribution)
                 exclude_self_samples = self.counts[self_wind]
-                nll = PoissonFast(validation_samples.mean()).negative_log_likelihood(self.counts[i:i+1]) # new method
+                nll = PoissonFast(validation_samples.mean()).negative_log_likelihood(
+                    self.counts[i : i + 1]
+                )  # new method
                 Probability_is_not_member_of_poisson = self._Chi2_dists[1].cdf(nll.sum())
-                Prob_this_isnt_part_of_poisson_noise.append(max([Probability_is_not_poisson, Probability_is_not_member_of_poisson]))
+                Prob_this_isnt_part_of_poisson_noise.append(
+                    max(
+                        [Probability_is_not_poisson, Probability_is_not_member_of_poisson]
+                    )
+                )
             self.peakiness = ary(Prob_this_isnt_part_of_poisson_noise)
         return self.peakiness
 
-_gaussian = lambda x, sigma, mu: exp(-((x-mu)/sigma)**2 /2)
+
+_gaussian = lambda x, sigma, mu: exp(-(((x - mu) / sigma) ** 2) / 2)
+
 
 class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
-    def determine_noise_floor(self, pvalue_for_noise=0.8, smear_factor=2.35*2):
+    def determine_noise_floor(self, pvalue_for_noise=0.8, smear_factor=2.35 * 2):
         """
-        Determine 
+        Determine
         Output
         ------
         (Also sets self.raw_noise_floor and self.noise_floor)
@@ -244,14 +284,16 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         """
         print("Calculating the final noise_floor...")
         raw_noise_values = np.broadcast_to(self.raw_noise_floor, (L, L))
-        valid_positions = np.isfinite(raw_noise_values) # record the positions of NOT nans
+        valid_positions = np.isfinite(
+            raw_noise_values
+        )  # record the positions of NOT nans
 
         # by weighted average
         # make a weight vector that's almost twice the length of the spectrum.
 
         energies = self.boundaries().mean(axis=1)
         fwhm_at_E = self.get_width_at(energies)
-        weight_vector_decay_rate = fwhm_at_E/2.35 * smear_factor
+        weight_vector_decay_rate = fwhm_at_E / 2.35 * smear_factor
         weight_matrix = np.empty([L, L])
 
         for i, (s, mu) in enumerate(zip(weight_vector_decay_rate, energies)):
@@ -271,7 +313,9 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
         assert np.isfinite(noise_floor).all()
         return self.noise_floor
 
-    def infer_peakiness_from_background(self, bg_evaluation_window_size=1.0, negative_deviation_dilution_factor=0.0):
+    def infer_peakiness_from_background(
+        self, bg_evaluation_window_size=1.0, negative_deviation_dilution_factor=0.0
+    ):
         """
         For each bin, determine the window size, and call that 'n'.
         Then, search left and right of that window for the first n noise values on each side.
@@ -290,7 +334,9 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
             peak_windows = self.get_windows(width_multiplier=bg_evaluation_window_size)
 
             print("Calculating peakiness_from_bg_noise...")
-            for peak_bins, bg_level in tqdm(zip(peak_windows, self.noise_floor), total=peak_windows.shape[0]):
+            for peak_bins, bg_level in tqdm(
+                zip(peak_windows, self.noise_floor), total=peak_windows.shape[0]
+            ):
                 samples = self.counts[peak_bins]
 
                 # create null hypothesis
@@ -301,9 +347,13 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
                 # apply the dilution factor onto any negatively-deviating points,
                 # so that negatively deviating datapoints contribute less to pushing up the chi2.
                 # The chi2 being very low is great.
-                chi2_array[samples<bg_level] = negative_deviation_dilution_factor*chi2_array[samples<bg_level]
+                chi2_array[samples < bg_level] = (
+                    negative_deviation_dilution_factor * chi2_array[samples < bg_level]
+                )
                 chi2 = chi2_array.sum()
-                chi2_distribution = self._Chi2_dists[len(samples)] # faster to call than to create own chi2 distributions
+                chi2_distribution = self._Chi2_dists[
+                    len(samples)
+                ]  # faster to call than to create own chi2 distributions
                 # DoF = len(samples), because NO part of the calculation of bg_level involved 'samples'.
                 # Therefore there are zero fitted parameters.
                 probability_is_peak = chi2_distribution.cdf(chi2)
@@ -312,42 +362,66 @@ class RealSpectrumLikelihoodWithNoiseFlooring(RealSpectrumLikelihoodSimple):
             self.peakiness_from_bg_noise = ary(peakiness_from_bg_noise)
         return self.peakiness_from_bg_noise
 
+
 Region = namedtuple("Region", ["left_edge", "right_edge", "peak_tips", "confidence"])
 
+
 class RealSpectrumPeakFinder(RealSpectrumCurvature):
-    def highlight_peaks(self, ax, peaks_identified, plot_scale="sqrt", color="C1", **plot_kwargs):
+    def highlight_peaks(
+        self, ax, peaks_identified, plot_scale="sqrt", color="C1", **plot_kwargs
+    ):
         """
-        To be used after a self.plot_sqrt_repr 
+        To be used after a self.plot_sqrt_repr
         """
-        if plot_scale=="sqrt":
+        if plot_scale == "sqrt":
             y = sqrt(self.counts)
         else:
             y = self.counts
 
         for region in peaks_identified:
-            if isinstance(region, np.ndarray) and region.shape==(2,):# peak is a numpy array with shape=(2,)
+            if isinstance(region, np.ndarray) and region.shape == (
+                2,
+            ):  # peak is a numpy array with shape=(2,)
                 l_index, r_index = region
-                ax.fill_between(self.boundaries()[l_index:r_index].flatten(), np.repeat(y[l_index:r_index], 2), color=color, **plot_kwargs)
-            elif isinstance(region, Region): # it's a namedtuple with left_edge, right_edge and peak_tips as fields.
+                ax.fill_between(
+                    self.boundaries()[l_index:r_index].flatten(),
+                    np.repeat(y[l_index:r_index], 2),
+                    color=color,
+                    **plot_kwargs
+                )
+            elif isinstance(
+                region, Region
+            ):  # it's a namedtuple with left_edge, right_edge and peak_tips as fields.
                 l_index, r_index = region.left_edge, region.right_edge
                 peak_tips = region.peak_tips
-                ax.fill_between(self.boundaries()[l_index:r_index].flatten(), np.repeat(y[l_index:r_index], 2), color=color, **plot_kwargs)
+                ax.fill_between(
+                    self.boundaries()[l_index:r_index].flatten(),
+                    np.repeat(y[l_index:r_index], 2),
+                    color=color,
+                    **plot_kwargs
+                )
 
-                x_values = np.broadcast_to(self.boundaries()[peak_tips].mean(axis=1), (2, len(peak_tips)))
+                x_values = np.broadcast_to(
+                    self.boundaries()[peak_tips].mean(axis=1), (2, len(peak_tips))
+                )
                 y_values = ary([np.zeros(len(y))[peak_tips], y[peak_tips]])
-                ax.plot(x_values, y_values, color='black', **plot_kwargs)
+                ax.plot(x_values, y_values, color="black", **plot_kwargs)
         return ax
 
-class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumLikelihoodWithNoiseFlooring):
-    def peak_identifier(self,
-                        curvature_threshold=-4.0,
-                        peakiness_threshold=0.9,
-                        bg_evaluation_window_size=1.0, # try 1.5
-                        ):
+
+class RealSpectrumPeakFinderFromNoiseFloor(
+    RealSpectrumPeakFinder, RealSpectrumLikelihoodWithNoiseFlooring
+):
+    def peak_identifier(
+        self,
+        curvature_threshold=-4.0,
+        peakiness_threshold=0.9,
+        bg_evaluation_window_size=1.0,  # try 1.5
+    ):
         """
         curvature_threshold is only used for deciding where the peak tips lie.
         peakiness_threshold decides region of interest: any part of the spectrum with self.peakiness_from_bg_noise above peakiness_threshold is considered a ROI(region of interest)
-        
+
         Returns
         -------
         regions
@@ -357,17 +431,21 @@ class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumL
                 l_index and r_index are used together to specify an ROI using self.noise_floor[l_index:r_index]
                 Note the right-hand-side-exclusive nature of python indexing. This forces r_index to be larger than the index of the right-most value by 1.
         """
-        curvature_bool_array = self.apply_threshold_on_curvature(threshold=curvature_threshold)
+        curvature_bool_array = self.apply_threshold_on_curvature(
+            threshold=curvature_threshold
+        )
         peakiness_from_bg_noise = self.infer_peakiness_from_background(
             bg_evaluation_window_size=bg_evaluation_window_size,
-            negative_deviation_dilution_factor=0.0
-            )
+            negative_deviation_dilution_factor=0.0,
+        )
 
         # use curvature to decide where are the peak tips
         curvature_vector = self.calculate_sqrt_curvature()
         diff = np.diff(curvature_vector)
         fDiff, bDiff = np.hstack([diff, [np.nan]]), np.hstack([[np.nan], diff])
-        local_mins_in_curvature_plot = np.logical_and(curvature_bool_array, np.logical_and(fDiff>0, bDiff<0))
+        local_mins_in_curvature_plot = np.logical_and(
+            curvature_bool_array, np.logical_and(fDiff > 0, bDiff < 0)
+        )
 
         peakiness_bool_array = peakiness_from_bg_noise >= peakiness_threshold
 
@@ -376,9 +454,11 @@ class RealSpectrumPeakFinderFromNoiseFloor(RealSpectrumPeakFinder, RealSpectrumL
         for l_index, r_index in _bool_array_to_peak_indices(peakiness_bool_array):
             bracketing_dummy_bool_vector = np.zeros(len(curvature_vector), dtype=bool)
             bracketing_dummy_bool_vector[l_index:r_index] = True
-            peaks_as_bool = np.logical_and(bracketing_dummy_bool_vector, local_mins_in_curvature_plot)
+            peaks_as_bool = np.logical_and(
+                bracketing_dummy_bool_vector, local_mins_in_curvature_plot
+            )
 
-            peak_locations = np.argwhere(peaks_as_bool)[:,0]
+            peak_locations = np.argwhere(peaks_as_bool)[:, 0]
             confidence = self.peakiness_from_bg_noise[peaks_as_bool]
             regions.append(Region(l_index, r_index, peak_locations, confidence))
         return regions
