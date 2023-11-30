@@ -1,5 +1,5 @@
 import datetime as dt
-import warnings, functools, os
+import warnings, os
 from functools import reduce
 from operator import add as __add__
 from collections import OrderedDict, namedtuple
@@ -678,12 +678,6 @@ class RealSpectrumInteractive(RealSpectrum):
                 1. Annotate the correct places if self._is_drawing_T_lines is true,
                     otherwise delete the previous annotations.
                 2. negate self._is_drawing_T_lines
-            Minor issue may arise if the user decides to begin the click from within bounds,
-                but then release the click from out-of-bounds.
-                This means a [None, None] will be recorded as the location of the release event,
-                which will get translated into float(nan).
-                This will lead to the function being unable to fit the values.
-
             """
             ax = inaxes = event.inaxes
             canvas = event.canvas
