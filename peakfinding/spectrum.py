@@ -667,72 +667,65 @@ class RealSpectrumInteractive(RealSpectrum):
             self._clicked_and_dragged.append([event.xdata, event.ydata])
         return event
 
-    def _on_release_callback_function_generator(self):
+    def _on_release(self, event):
         """
-        Function factory, creates an _on_release() function which is complementary to _on_press.
+        Upon release of cursor: if within bounds and all values are valid:
+            1. Annotate the correct places if self._is_drawing_T_lines is true,
+                otherwise delete the previous annotations.
+            2. negate self._is_drawing_T_lines
         """
+        ax = inaxes = event.inaxes
+        canvas = event.canvas
+        toolbar = canvas.manager.toolbar
+        is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
 
-        def _on_release(event):
-            """
-            Upon release of cursor: if within bounds and all values are valid:
-                1. Annotate the correct places if self._is_drawing_T_lines is true,
-                    otherwise delete the previous annotations.
-                2. negate self._is_drawing_T_lines
-            """
-            ax = inaxes = event.inaxes
-            canvas = event.canvas
-            toolbar = canvas.manager.toolbar
-            is_cursor, is_zoom_pan = check_matplotlib_toolbar_tool_used(toolbar)
-
-            # first 3 if-conditions are to screen away unwanted events.
-            if is_zoom_pan:
-                return event
-            if (len(self._clicked_and_dragged) % 2) == 0:
-                print("Mouse click started in an invalid region; data-points pair discarded.\n")
-                return event  # do not append point
-            if not inaxes:
-                print("Mouse released in an invalid region; data-points pair discarded.\n")
-                self._clicked_and_dragged.pop()
-                return event
-
-            # if the clicked and release both happened within a valid region:
-            print("released at x={}, y={}".format(event.xdata, event.ydata))
-            self._clicked_and_dragged.append([event.xdata, event.ydata])
-
-            if self._is_drawing_T_lines:
-                y2 = self._clicked_and_dragged.pop()[1]
-                y1 = self._clicked_and_dragged.pop()[1]
-                base, top = sorted([y1, y2])
-                half_max = np.mean([base, top])
-                x1, x2 = ax.get_xlim()
-                xspan, xmean = abs(np.diff([x1, x2])[0]), np.mean([x1, x2])
-                self._annotations.append(ax.annotate("base", [xmean, base], va="bottom"))
-                self._annotations.append(ax.annotate("Half-maximum", [xmean, half_max], va="center"))
-                self._annotations.append(ax.annotate("tip", [xmean, top], va="top"))
-                self._annotations.extend(
-                    ax.plot(
-                        [xmean - xspan * 0.45, xmean + xspan * 0.45],
-                        np.repeat([base, half_max, top], 2).reshape([3, 2]).T,
-                        color="black",
-                    )
-                )
-                self.fig.canvas.draw()
-                print(f"{base=}, {half_max=}, {top=}")
-                print("Reference line drawn. Data-points pair won't be used.\n")
-                self._is_drawing_T_lines = False
-
-            else:
-                while self._annotations:
-                    self._annotations.pop().remove()
-                self.fig.canvas.draw()  # wipe the canvas of annotations
-                x_coords = sorted(ary(self._clicked_and_dragged[-2:])[:, 0])
-                print(f"x_left={x_coords[0]}, x_right={x_coords[1]}")
-                print("Data-points pair recorded.\n")
-                self._is_drawing_T_lines = True
-
+        # first 3 if-conditions are to screen away unwanted events.
+        if is_zoom_pan:
+            return event
+        if (len(self._clicked_and_dragged) % 2) == 0:
+            print("Mouse click started in an invalid region; data-points pair discarded.\n")
+            return event  # do not append point
+        if not inaxes:
+            print("Mouse released in an invalid region; data-points pair discarded.\n")
+            self._clicked_and_dragged.pop()
             return event
 
-        return _on_release
+        # if the clicked and release both happened within a valid region:
+        print("released at x={}, y={}".format(event.xdata, event.ydata))
+        self._clicked_and_dragged.append([event.xdata, event.ydata])
+
+        if self._is_drawing_T_lines:
+            y2 = self._clicked_and_dragged.pop()[1]
+            y1 = self._clicked_and_dragged.pop()[1]
+            base, top = sorted([y1, y2])
+            half_max = np.mean([base, top])
+            x1, x2 = ax.get_xlim()
+            xspan, xmean = abs(np.diff([x1, x2])[0]), np.mean([x1, x2])
+            self._annotations.append(ax.annotate("base", [xmean, base], va="bottom"))
+            self._annotations.append(ax.annotate("Half-maximum", [xmean, half_max], va="center"))
+            self._annotations.append(ax.annotate("tip", [xmean, top], va="top"))
+            self._annotations.extend(
+                ax.plot(
+                    [xmean - xspan * 0.45, xmean + xspan * 0.45],
+                    np.repeat([base, half_max, top], 2).reshape([3, 2]).T,
+                    color="black",
+                )
+            )
+            self.fig.canvas.draw()
+            print(f"{base=}, {half_max=}, {top=}")
+            print("Reference line drawn. Data-points pair won't be used.\n")
+            self._is_drawing_T_lines = False
+
+        else:
+            while self._annotations:
+                self._annotations.pop().remove()
+            self.fig.canvas.draw()  # wipe the canvas of annotations
+            x_coords = sorted(ary(self._clicked_and_dragged[-2:])[:, 0])
+            print(f"x_left={x_coords[0]}, x_right={x_coords[1]}")
+            print("Data-points pair recorded.\n")
+            self._is_drawing_T_lines = True
+
+        return event
 
     def _setup_fig(self, fig):
         """If started figure in drawing_mode,
@@ -741,8 +734,7 @@ class RealSpectrumInteractive(RealSpectrum):
         self._annotations = []
         self._is_drawing_T_lines = True
         self.on_press_connection = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
-        _on_release = self._on_release_callback_function_generator()
-        self.on_release_connection = self.fig.canvas.mpl_connect("button_release_event", _on_release)
+        self.on_release_connection = self.fig.canvas.mpl_connect("button_release_event", self._on_release)
 
     def _teardown_fig(self):
         self.fig.canvas.mpl_disconnect(self.on_press_connection)
